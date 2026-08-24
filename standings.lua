@@ -378,11 +378,13 @@ function sepgp_standings:BuildStandingsTable()
     end
   end
   sepgp.alts = {}
+  sepgp:buildExternalMainsTable()
   for i = 1, GetNumGuildMembers(1) do
     local name, _, _, _, class, _, note, officernote, _, _ = GetGuildRosterInfo(i)
     local ep = (sepgp:get_ep_v3(name,officernote) or 0) 
     local gp = (sepgp:get_gp_v3(name,officernote) or sepgp.VARS.basegp)
     local main, main_class, main_rank = sepgp:parseAlt(name,officernote)
+    local ext_name = sepgp.external_mains_reverse and sepgp.external_mains_reverse[name]
     if (main) then
       if ((self._playerName) and (name == self._playerName)) then
         if (not sepgp_main) or (sepgp_main and sepgp_main ~= main) then
@@ -398,10 +400,10 @@ function sepgp_standings:BuildStandingsTable()
     if ep > 0 then
       if (sepgp_raidonly) and next(r) then
         if r[name] then
-          table.insert(t,{name,class,armor_class,ep,gp,ep/gp})
+          table.insert(t,{name,class,armor_class,ep,gp,ep/gp,ext_name})
         end
       else
-      	table.insert(t,{name,class,armor_class,ep,gp,ep/gp})
+      	table.insert(t,{name,class,armor_class,ep,gp,ep/gp,ext_name})
       end
     end
   end
@@ -438,7 +440,7 @@ function sepgp_standings:OnTooltipUpdate()
   local t = self:BuildStandingsTable()
   local separator
   for i = 1, table.getn(t) do
-    local name, class, armor_class, ep, gp, pr = unpack(t[i])
+    local name, class, armor_class, ep, gp, pr, ext_name = unpack(t[i])
     if (sepgp_groupbyarmor) or (sepgp_groupbyrole) then
       if not (separator) then
         if (sepgp_groupbyarmor) then
@@ -471,7 +473,8 @@ function sepgp_standings:OnTooltipUpdate()
         end
       end
     end
-    local text = C:Colorize(BC:GetHexColor(class), name)
+    local displayname = ext_name and string.format("%s |cff999999[ext:%s]|r",ext_name,name) or name
+    local text = C:Colorize(BC:GetHexColor(class), displayname)
     local text2, text4
     if sepgp_minep > 0 and ep < sepgp_minep then
       text2 = C:Red(string.format("%.4g", ep))

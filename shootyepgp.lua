@@ -194,6 +194,13 @@ local admincmd, membercmd = {type = "group", handler = sepgp, args = {
       func = function() sepgp:deRosterList() end,
       order = 11,
     },
+    extlist = {
+      type = "execute",
+      name = "External Mains List",
+      desc = "List all external mains (players in other guilds) currently linked to a banker alt in this guild.",
+      func = function() sepgp:externalMainsList() end,
+      order = 12,
+    },
     debuglog = {
       type = "execute",
       name = "Clear Debug Log",
@@ -1449,6 +1456,13 @@ end
 function sepgp:givename_ep(getname,ep) -- awards ep to a single character
   if not (admin()) then return end
   local postfix, alt = ""
+  local ext_orig
+  local ext_alt = self:resolveExternalMain(getname)
+  if (ext_alt) then
+    ext_orig = getname
+    getname = ext_alt
+    postfix = string.format(" (banker alt for %s)",ext_orig)
+  end
   if (sepgp_altspool) then
     local main = self:parseAlt(getname)
     if (main) then
@@ -1479,6 +1493,13 @@ end
 function sepgp:givename_gp(getname, gp, itemName, specType, routeInfo) -- assigns gp to a single character
   if not (admin()) then return end
   local postfix, alt = ""
+  local ext_orig
+  local ext_alt = self:resolveExternalMain(getname)
+  if (ext_alt) then
+    ext_orig = getname
+    getname = ext_alt
+    postfix = string.format(" (banker alt for %s)",ext_orig)
+  end
   if (sepgp_altspool) then
     local main = self:parseAlt(getname)
     if (main) then
@@ -1680,6 +1701,7 @@ end
 function sepgp:buildRosterTable()
   local g, r = { }, { }
   local numGuildMembers = GetNumGuildMembers(1)
+  self:buildExternalMainsTable()
   if (sepgp_raidonly) and GetNumRaidMembers() > 0 then
     for i = 1, GetNumRaidMembers(true) do
       local name, rank, subgroup, level, class, fileName, zone, online, isDead = GetRaidRosterInfo(i) 
@@ -1713,6 +1735,15 @@ function sepgp:buildRosterTable()
         table.insert(g,{["name"]=member_name,["class"]=class})
       end
     end    
+  end
+  for extname_lower, entry in pairs(sepgp.external_mains) do
+    if (sepgp_raidonly) and next(r) then
+      if r[entry.ext_name] then
+        table.insert(g,{["name"]=entry.ext_name,["class"]=entry.class})
+      end
+    else
+      table.insert(g,{["name"]=entry.ext_name,["class"]=entry.class})
+    end
   end
   return g
 end
@@ -1784,6 +1815,64 @@ function sepgp:parseAlt(name,officernote)
   return nil
 end
 
+---------------
+-- External Mains (banker alts holding EPGP for players in other guilds)
+---------------
+-- Tag format: on a low-level "banker" alt that IS in this guild, add
+-- {X:Name} to its officer note, alongside the normal {EP:GP} block, e.g.
+--   {120:45}{X:Grimtooth}
+-- "Grimtooth" is the real character name of the person's main, which
+-- lives in a different guild. All EPGP for "Grimtooth" is then stored
+-- and read from this alt's officer note.
+function sepgp:parseExternalTag(officernote)
+  if not officernote then return nil end
+  local _,_,ext = string.find(officernote,"{X:([%a][%a]*)}")
+  if ext then
+    return self:camelCase(ext)
+  end
+  return nil
+end
+
+function sepgp:buildExternalMainsTable()
+  sepgp.external_mains = {}
+  sepgp.external_mains_reverse = {}
+  for i = 1, GetNumGuildMembers(1) do
+    local name, _, _, _, class, _, _, officernote, _, _ = GetGuildRosterInfo(i)
+    local ext = self:parseExternalTag(officernote)
+    if ext and name then
+      sepgp.external_mains[string.lower(ext)] = {alt = name, class = class, officernote = officernote, ext_name = ext}
+      sepgp.external_mains_reverse[name] = ext
+    end
+  end
+end
+
+-- Given a real character name (which may not be in this guild), returns
+-- the in-guild "banker alt" name/class/officernote holding their EPGP,
+-- or nil if `name` isn't a registered external main.
+function sepgp:resolveExternalMain(name)
+  if not name then return nil end
+  if not sepgp.external_mains then self:buildExternalMainsTable() end
+  local entry = sepgp.external_mains[string.lower(name)]
+  if entry then
+    return entry.alt, entry.class, entry.officernote
+  end
+  return nil
+end
+
+function sepgp:externalMainsList()
+  self:buildExternalMainsTable()
+  local found = false
+  self:defaultPrint("External mains linked to banker alts:")
+  for extname, entry in pairs(sepgp.external_mains) do
+    found = true
+    local ep = self:get_ep_v3(entry.alt, entry.officernote) or 0
+    local gp = self:get_gp_v3(entry.alt, entry.officernote) or sepgp.VARS.basegp
+    self:defaultPrint(string.format("  %s -> banker alt %s (EP %d, GP %d)", extname, entry.alt, ep, gp))
+  end
+  if not found then
+    self:defaultPrint("  (none registered)")
+  end
+end
 
 ---------------
 -- Reserves
@@ -2057,6 +2146,15 @@ function sepgp:captureBid(text, sender)
         return
       end
     end
+    -- sender isn't a direct guild member; check if they're a registered external main
+    local ext_alt, ext_class = self:resolveExternalMain(sender)
+    if (ext_alt) then
+      bids_blacklist[sender] = true
+      table.insert(sepgp.bids_tm, {sender, ext_class})
+      self:addonMessage(string.format("BID;TM;%s;%s", sender, ext_class), "RAID")
+      SendChatMessage(string.format("[EPGP] Transmog Bid: %s", sender), "RAID")
+      sepgp_bids:Toggle(true)
+    end
     return
   end
 
@@ -2108,6 +2206,34 @@ function sepgp:captureBid(text, sender)
       sepgp_bids:Toggle(true)
       return
     end
+  end
+
+  -- sender isn't a direct guild member; check if they're a registered
+  -- external main (their EPGP lives on a banker alt inside this guild)
+  local ext_alt, ext_class, ext_officernote = self:resolveExternalMain(sender)
+  if (ext_alt) then
+    local ep = (self:get_ep_v3(ext_alt, ext_officernote) or 0)
+    local gp = (self:get_gp_v3(ext_alt, ext_officernote) or sepgp.VARS.basegp)
+    bids_blacklist[sender] = true
+    local entry = {sender, ext_class, ep, gp, ep/gp}
+    local pr_str = string.format("%.2f", ep/gp)
+    if keyword == "ms" then
+      table.insert(sepgp.bids_main, entry)
+      local bid_msg = string.format("BID;MS;%s;%s;%d;%d;%s", sender, ext_class, ep, gp, pr_str)
+      self:addonMessage(bid_msg, "RAID")
+      SendChatMessage(string.format("[EPGP] Main Spec Bid: %s (PR %.2f)", sender, ep/gp), "RAID")
+    elseif keyword == "flex" then
+      table.insert(sepgp.bids_flex, entry)
+      local bid_msg = string.format("BID;FLEX;%s;%s;%d;%d;%s", sender, ext_class, ep, gp, pr_str)
+      self:addonMessage(bid_msg, "RAID")
+      SendChatMessage(string.format("[EPGP] Flex Bid: %s (PR %.2f)", sender, ep/gp), "RAID")
+    elseif keyword == "os" then
+      table.insert(sepgp.bids_off, entry)
+      local bid_msg = string.format("BID;OS;%s;%s;%d;%d;%s", sender, ext_class, ep, gp, pr_str)
+      self:addonMessage(bid_msg, "RAID")
+      SendChatMessage(string.format("[EPGP] Off Spec Bid: %s (PR %.2f)", sender, ep/gp), "RAID")
+    end
+    sepgp_bids:Toggle(true)
   end
 end
 
