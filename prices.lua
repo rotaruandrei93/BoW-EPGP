@@ -747,6 +747,23 @@ local prices = {
   [16910] = {1,"T1"}; -- "Wristguards of Stability"
   [18841] = {4,"T1"}; -- "Wristguards of True Flight"
   [81262] = {0,"T1"}; -- "Core Forged Helmet"
+
+-------------------
+----- Azuregos ----
+-------------------  
+
+[17070] = {12,"WB"}; -- "Fang of the Mystics"
+[18202] = {8,"WB"}; -- "Eskhandar's Left Claw"
+[18208] = {8,"WB"}; -- "Drape of Benediction"
+[18541] = {8,"WB"}; -- "Puissant Cape"
+[18542] = {8,"WB"}; -- "Typhoon"
+[18545] = {10,"WB"}; -- "Leggings of Arcane Supremacy"
+[18547] = {0,"WB"}; -- "Unmelting Ice Girdle"
+[19130] = {8,"WB"}; -- "Cold Snap"
+[19131] = {8,"WB"}; -- "Snowblind Shoes"
+[19132] = {14,"WB"}; -- "Crystal Adorned Crown"
+[18704] = {0,"WB"}; -- "Mature Blue Dragon Sinew"
+[83544] = {0,"WB"}; -- "Pattern: Stormscale Leggings"
 }
 sepgp.gp_prices = prices
 --[[local price_scaling = {
