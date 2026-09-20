@@ -2276,6 +2276,9 @@ function sepgp:clearBids(reset)
   end
   running_bid = false
   sepgp_bids._counterText = ""
+  -- Re-arm the auto-show: a genuinely new bid cycle should still surface the
+  -- window even if it was closed during the previous item.
+  sepgp_bids.userClosed = false
   sepgp_bids:Refresh()
 end
 
@@ -2458,6 +2461,7 @@ function sepgp:clearBidsQuiet()
   end
   running_bid = false
   sepgp_bids._counterText = ""
+  sepgp_bids.userClosed = false
   sepgp_bids:Refresh()
   self:HideBidPopup()
 end
