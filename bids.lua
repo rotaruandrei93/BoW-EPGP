@@ -52,6 +52,7 @@ function sepgp_bids:setHideScript()
       tablet:SetScript("OnHide",function()
           if not T:IsAttached("sepgp_bids") then
             T:Attach("sepgp_bids")
+            sepgp_bids.userClosed = true
             this:SetScript("OnHide",nil)
           end
         end)
@@ -63,6 +64,7 @@ function sepgp_bids:setHideScript()
         btn:SetHeight(24)
         btn:SetScript("OnClick", function()
           T:Attach("sepgp_bids")
+          sepgp_bids.userClosed = true
         end)
         tablet.shootyCloseBtn = btn
       end
@@ -82,16 +84,25 @@ end
 function sepgp_bids:Toggle(forceShow)
   self:Top()
   if T:IsAttached("sepgp_bids") then
+    if (forceShow) and (self.userClosed) then
+      -- The user explicitly closed this window; don't pop it back open for
+      -- every routine bid update (MS/FLEX/OS/TM/PASS). Bid data still
+      -- accrues in the background tables regardless, so nothing is lost -
+      -- "Show Bid Window" (or the next fresh bid item) brings it back.
+      return
+    end
     T:Detach("sepgp_bids") -- show
     if (T:IsLocked("sepgp_bids")) then
       T:ToggleLocked("sepgp_bids")
     end
+    self.userClosed = false
     self:setHideScript()
   else
     if (forceShow) then
       sepgp_bids:Refresh()
     else
       T:Attach("sepgp_bids") -- hide
+      self.userClosed = true
     end
   end  
 end
