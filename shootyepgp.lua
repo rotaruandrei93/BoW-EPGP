@@ -1736,7 +1736,7 @@ function sepgp:buildRosterTable()
       end
     end    
   end
-  for extname_lower, entry in pairs(sepgp.external_mains) do
+  for extname_lower, entry in pairs(sepgp.external_mains or {}) do
     if (sepgp_raidonly) and next(r) then
       if r[entry.ext_name] then
         table.insert(g,{["name"]=entry.ext_name,["class"]=entry.class})
@@ -1834,9 +1834,19 @@ function sepgp:parseExternalTag(officernote)
 end
 
 function sepgp:buildExternalMainsTable()
+  local numGuildMembers = GetNumGuildMembers(1)
+  if (numGuildMembers == 0) then
+    -- Roster isn't loaded yet. Request it and leave the cache unset so the
+    -- next lookup rebuilds, instead of caching an empty table for the
+    -- whole session and silently failing every external main lookup.
+    GuildRoster()
+    sepgp.external_mains = nil
+    sepgp.external_mains_reverse = nil
+    return
+  end
   sepgp.external_mains = {}
   sepgp.external_mains_reverse = {}
-  for i = 1, GetNumGuildMembers(1) do
+  for i = 1, numGuildMembers do
     local name, _, _, _, class, _, _, officernote, _, _ = GetGuildRosterInfo(i)
     local ext = self:parseExternalTag(officernote)
     if ext and name then
@@ -1852,6 +1862,7 @@ end
 function sepgp:resolveExternalMain(name)
   if not name then return nil end
   if not sepgp.external_mains then self:buildExternalMainsTable() end
+  if not sepgp.external_mains then return nil end
   local entry = sepgp.external_mains[string.lower(name)]
   if entry then
     return entry.alt, entry.class, entry.officernote
@@ -1859,11 +1870,25 @@ function sepgp:resolveExternalMain(name)
   return nil
 end
 
+-- Returns the class for a looter name, whether they are a direct guild
+-- member or a registered external main (EPGP held on an in-guild banker
+-- alt). Second return is true when the name resolved as an external main.
+-- Used by the loot capture chain so external mains are not dropped before
+-- the award GP window is shown.
+function sepgp:resolveLooterClass(name)
+  if not name then return nil end
+  local _, class = self:verifyGuildMember(name, true)
+  if (class) then return class, false end
+  local ext_alt, ext_class = self:resolveExternalMain(name)
+  if (ext_alt) then return ext_class, true end
+  return nil
+end
+
 function sepgp:externalMainsList()
   self:buildExternalMainsTable()
   local found = false
   self:defaultPrint("External mains linked to banker alts:")
-  for extname, entry in pairs(sepgp.external_mains) do
+  for extname, entry in pairs(sepgp.external_mains or {}) do
     found = true
     local ep = self:get_ep_v3(entry.alt, entry.officernote) or 0
     local gp = self:get_gp_v3(entry.alt, entry.officernote) or sepgp.VARS.basegp
@@ -2675,7 +2700,7 @@ function sepgp:endBidNow()
   elseif table.getn(sepgp.bids_tm) > 0 and sepgp.tm_winner then
     looter_name = sepgp.tm_winner
   end
-  local _, class = self:verifyGuildMember(looter_name, true)
+  local class = self:resolveLooterClass(looter_name)
   local color = "|cffFFFFFF" .. looter_name .. "|r"
   if class then
     color = "|c" .. (BC and BC:GetHexColor(class) or "ffFFFFFF") .. looter_name .. "|r"
@@ -2939,7 +2964,7 @@ function sepgp:handleBidSync(message, sender)
 
   if bid_type == "CLEAR" then
     -- Only clear on non-ML clients; ML manages bid_item locally
-    if not (IsRaidLeader() or sepgp:lootMaster()) then
+    if not sepgp:lootMaster() then
       sepgp.bid_item = {}
       sepgp.bids_main = {}
       sepgp.bids_flex = {}
@@ -2953,7 +2978,7 @@ function sepgp:handleBidSync(message, sender)
 
   if bid_type == "ITEM" then
     -- ML already set bid_item locally; only process on non-ML clients
-    if IsRaidLeader() or sepgp:lootMaster() then
+    if sepgp:lootMaster() then
       -- ML: just show the popup, don't overwrite bid_item (price would be lost)
       local mlName = parts[4] or sender
       local gpCost = parts[5] or "?"
@@ -3007,7 +3032,7 @@ function sepgp:handleBidSync(message, sender)
 
   -- Handle PASS sync from master looter
   if bid_type == "PASS" then
-    if IsRaidLeader() or self:lootMaster() then return end
+    if self:lootMaster() then return end
     local pass_name = parts[3]
     if pass_name then
       local function removeBidSync(list)
@@ -3028,7 +3053,7 @@ function sepgp:handleBidSync(message, sender)
 
   -- Handle TM sync (only name and class, no PR)
   if bid_type == "TM" and table.getn(parts) >= 4 then
-    if IsRaidLeader() or self:lootMaster() then return end
+    if self:lootMaster() then return end
     local bidder_name = parts[3]
     local bidder_class = parts[4]
     table.insert(sepgp.bids_tm, {bidder_name, bidder_class})
@@ -3045,7 +3070,7 @@ function sepgp:handleBidSync(message, sender)
     local bidder_main = parts[8] -- may be nil
 
     -- Don't duplicate if we already have this bid (master looter has it locally)
-    if IsRaidLeader() or self:lootMaster() then return end
+    if self:lootMaster() then return end
 
     local entry
     if bidder_main and bidder_main ~= "" then
@@ -4177,7 +4202,7 @@ function sepgp:tradeLoot(playerState,targetState)
         if (not bind) or (bind ~= self.VARS.boe) then return end
         if UnitExists("target") and UnitIsPlayer("target") and UnitCanCooperate("player","target") and (not UnitIsUnit("player","target")) then
           local tradeTarget = UnitName("target")
-          local _, class = self:verifyGuildMember(tradeTarget,true)
+          local class = self:resolveLooterClass(tradeTarget)
           if not (class) then return end
           local target_color = C:Colorize(BC:GetHexColor(class),tradeTarget)
           local timestamp = date("%b/%d %H:%M:%S")
@@ -4321,7 +4346,7 @@ function sepgp:processLoot(player,itemLink,source)
     if player == self._playerName then 
       class = UnitClass("player") -- localized
     else
-      _, class = self:verifyGuildMember(player,true) -- localized
+      class = self:resolveLooterClass(player) -- localized
     end
     if not (class) then return end
     self._lastPlayerItem, self._lastPlayerItemTime, self._lastPlayerItemSource = player_item, now, source
