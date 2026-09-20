@@ -211,7 +211,7 @@ local function triggerWinnerPopup(name)
     sepgp:writeDebugLog("BID_WIN_DIRECT_POPUP | SKIP | no bid_item")
     return
   end
-  local _, class = sepgp:verifyGuildMember(name, true)
+  local class = sepgp:resolveLooterClass(name)
   local color = "|cffFFFFFF" .. name .. "|r"
   if class then
     local hex = BC and BC:GetHexColor(class) or "ffFFFFFF"
