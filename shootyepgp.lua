@@ -2124,7 +2124,6 @@ function sepgp:captureBid(text, sender)
     removeBid(sepgp.bids_off)
     removeBid(sepgp.bids_tm)
     bids_blacklist[sender] = nil -- allow re-bidding after pass
-    SendChatMessage(string.format("[EPGP] %s withdrew their bid (PASS)", sender), "RAID")
     self:addonMessage(string.format("BID;PASS;%s", sender), "RAID")
     sepgp_bids:Toggle(true)
     return
@@ -2141,7 +2140,6 @@ function sepgp:captureBid(text, sender)
         bids_blacklist[sender] = true
         table.insert(sepgp.bids_tm, {name, class})
         self:addonMessage(string.format("BID;TM;%s;%s", name, class), "RAID")
-        SendChatMessage(string.format("[EPGP] Transmog Bid: %s", name), "RAID")
         sepgp_bids:Toggle(true)
         return
       end
@@ -2152,7 +2150,6 @@ function sepgp:captureBid(text, sender)
       bids_blacklist[sender] = true
       table.insert(sepgp.bids_tm, {sender, ext_class})
       self:addonMessage(string.format("BID;TM;%s;%s", sender, ext_class), "RAID")
-      SendChatMessage(string.format("[EPGP] Transmog Bid: %s", sender), "RAID")
       sepgp_bids:Toggle(true)
     end
     return
@@ -2189,19 +2186,16 @@ function sepgp:captureBid(text, sender)
         local bid_msg = string.format("BID;MS;%s;%s;%d;%d;%s", name, class, ep, gp, pr_str)
         if main_name then bid_msg = bid_msg .. ";" .. main_name end
         self:addonMessage(bid_msg, "RAID")
-        SendChatMessage(string.format("[EPGP] Main Spec Bid: %s (PR %.2f)", display_name, ep/gp), "RAID")
       elseif keyword == "flex" then
         table.insert(sepgp.bids_flex, entry)
         local bid_msg = string.format("BID;FLEX;%s;%s;%d;%d;%s", name, class, ep, gp, pr_str)
         if main_name then bid_msg = bid_msg .. ";" .. main_name end
         self:addonMessage(bid_msg, "RAID")
-        SendChatMessage(string.format("[EPGP] Flex Bid: %s (PR %.2f)", display_name, ep/gp), "RAID")
       elseif keyword == "os" then
         table.insert(sepgp.bids_off, entry)
         local bid_msg = string.format("BID;OS;%s;%s;%d;%d;%s", name, class, ep, gp, pr_str)
         if main_name then bid_msg = bid_msg .. ";" .. main_name end
         self:addonMessage(bid_msg, "RAID")
-        SendChatMessage(string.format("[EPGP] Off Spec Bid: %s (PR %.2f)", display_name, ep/gp), "RAID")
       end
       sepgp_bids:Toggle(true)
       return
@@ -2221,17 +2215,14 @@ function sepgp:captureBid(text, sender)
       table.insert(sepgp.bids_main, entry)
       local bid_msg = string.format("BID;MS;%s;%s;%d;%d;%s", sender, ext_class, ep, gp, pr_str)
       self:addonMessage(bid_msg, "RAID")
-      SendChatMessage(string.format("[EPGP] Main Spec Bid: %s (PR %.2f)", sender, ep/gp), "RAID")
     elseif keyword == "flex" then
       table.insert(sepgp.bids_flex, entry)
       local bid_msg = string.format("BID;FLEX;%s;%s;%d;%d;%s", sender, ext_class, ep, gp, pr_str)
       self:addonMessage(bid_msg, "RAID")
-      SendChatMessage(string.format("[EPGP] Flex Bid: %s (PR %.2f)", sender, ep/gp), "RAID")
     elseif keyword == "os" then
       table.insert(sepgp.bids_off, entry)
       local bid_msg = string.format("BID;OS;%s;%s;%d;%d;%s", sender, ext_class, ep, gp, pr_str)
       self:addonMessage(bid_msg, "RAID")
-      SendChatMessage(string.format("[EPGP] Off Spec Bid: %s (PR %.2f)", sender, ep/gp), "RAID")
     end
     sepgp_bids:Toggle(true)
   end
