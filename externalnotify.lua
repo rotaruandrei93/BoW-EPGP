@@ -406,11 +406,16 @@ end
 
 SLASH_SEPGPSTANDING1 = "/sepgpstanding"
 SlashCmdList["SEPGPSTANDING"] = function()
+  local g = IsInGuild() and GetGuildInfo("player") or nil
+  say(string.format("externalnotify v%s (guild: %s)", VERSION, IsInGuild() and (g or "not loaded yet") or "none"))
   if not notBoW() then
-    say("You are in Blades of Wrynn - use the normal standings window.")
+    if g == GUILD_NAME then
+      say("You are in Blades of Wrynn - use the normal standings window.")
+    else
+      say("Guild info is not loaded yet - try again in a few seconds.")
+    end
     return
   end
-  say(string.format("externalnotify v%s", VERSION))
   sepgp_standings:Toggle(true)
   startRequest(true)
 end
