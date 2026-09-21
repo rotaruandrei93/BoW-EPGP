@@ -121,9 +121,13 @@ local function resolveActiveBid()
   sepgp:AutoResolveLoot(data)
 end
 
+-- Only the final N seconds are announced to raid chat; the earlier ticks of
+-- a long timer (30, 25, 20...) stay silent so chat isn't spammed.
+local COUNTDOWN_ANNOUNCE_FROM = 5
+
 function sepgp_bids:countdownCounter()
   self._counter = (self._counter or (sepgp_bidtimer or sepgp.VARS.bidtimer)) - 1
-  if GetNumRaidMembers()>0 and self._counter > 0 then
+  if GetNumRaidMembers()>0 and self._counter > 0 and self._counter <= COUNTDOWN_ANNOUNCE_FROM then
     self._counterText = C:Yellow(tostring(self._counter))
     sepgp:widestAudience(tostring(self._counter))
     --SendChatMessage(tostring(self._counter),"RAID")
