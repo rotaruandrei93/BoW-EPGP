@@ -2,33 +2,33 @@
 -- Remote standings for external mains (players in OTHER guilds / unguilded whose
 -- EPGP lives on a banker alt in Blades of Wrynn, tagged {X:Name} in the officer note).
 --
+-- WoW 1.12 cannot send addon messages to a player outside your guild (only
+-- PARTY / RAID / GUILD / BATTLEGROUND exist), so this uses a small hidden custom
+-- chat channel that Squire+ members and external mains join. Every message is
+-- tagged and filtered out of all chat windows, so nobody sees anything.
+--
 -- When an external main opens the standings window (or types /sepgpstanding):
---   1. the addon runs /who g-"Blades of Wrynn" and sends a hidden addon message
---      (XQ) to online members, in small batches;
---   2. every member who can read officer notes AND is rank Squire or higher
---      answers "I can serve" (XA);
+--   1. the addon joins the hidden channel and asks "who can serve me?" (XQ);
+--   2. every online member who is rank Squire or higher (can read officer notes)
+--      answers (XA) - but only if the asker is a registered external main
+--      ({X:Name} in some officer note), so random channel joiners get nothing;
 --   3. the requester picks the first one (XR) and that member streams the whole
---      standings list back in small hidden chunks (XL);
+--      standings list back in small chunks (XL);
 --   4. the standings window is filled with that list and a copy is saved, so the
 --      window still shows the last known list when nobody qualified is online.
 --
--- No party/raid needed, no chat whispers, no bot. (Hidden addon whispers are the
--- only way the WoW API lets a player outside the guild talk to guild members.)
---
--- Commands:  /sepgpstanding  open the standings window and refresh it
---            /sepgpask <name>  ask one specific BoW member directly (fallback)
+-- Command:  /sepgpstanding  open the standings window and refresh it
 
-local PREFIX         = "SEPGPX"
+local CHANNEL        = "BoWEPGPSync"
+local MARK           = "SEPGPX;"
 local GUILD_NAME     = "Blades of Wrynn"
 local MIN_RANK_NAME  = "Squire"   -- this rank and every rank above it may serve
-local BATCH_SIZE     = 8          -- members asked per batch
-local BATCH_WAIT     = 3          -- seconds between batches
-local MAX_TARGETS    = 40
-local WHO_COOLDOWN   = 30
-local PICK_TIMEOUT   = 12         -- seconds a chosen member gets to finish streaming
+local OFFER_WAIT     = 8          -- seconds to wait for any Squire+ member to answer
+local PICK_TIMEOUT   = 15         -- seconds a chosen member gets to finish streaming
 local AUTO_MIN_AGE   = 60         -- don't re-request if the saved list is fresher than this
 local SERVE_COOLDOWN = 30
 local CHUNK_CHARS    = 200
+local CHUNK_SPACING  = 0.4
 
 local ext = {}
 sepgp.extRemote = ext
@@ -36,10 +36,9 @@ sepgp.extRemote = ext
 local frame = CreateFrame("Frame")
 local tasks = {}
 local cur = nil                   -- current request
-local whoReq = nil
-local lastWho = -1000
 local lastServed = {}
 local lastAnswered = {}
+local serverJoined = false
 
 ------------------------------------------------------------------ helpers
 
@@ -103,6 +102,47 @@ local function canServe()
   return true
 end
 
+------------------------------------------------------------------ hidden channel
+
+local function channelId()
+  local id = GetChannelName(CHANNEL)
+  if id and id > 0 then return id end
+  return nil
+end
+
+-- join (if needed), then run fn; gives up silently after ~10 s
+local function withChannel(fn, tries)
+  tries = tries or 0
+  if channelId() then fn() return end
+  if tries == 0 then
+    JoinChannelByName(CHANNEL)
+    if ChatFrame_RemoveChannel then ChatFrame_RemoveChannel(DEFAULT_CHAT_FRAME, CHANNEL) end
+  end
+  if tries >= 10 then return end
+  after(1, function() withChannel(fn, tries + 1) end)
+end
+
+local function send(msg)
+  local id = channelId()
+  if id then SendChatMessage(MARK .. msg, "CHANNEL", nil, id) end
+end
+
+local function isOurChannel(name)
+  return name and string.find(string.lower(name), string.lower(CHANNEL), 1, true) ~= nil
+end
+
+-- Hide everything we send/receive and the channel join/leave notices from all chat frames.
+local orig_ChatFrame_OnEvent = ChatFrame_OnEvent
+ChatFrame_OnEvent = function(ev)
+  if ev == "CHAT_MSG_CHANNEL" then
+    if arg1 and string.sub(arg1, 1, string.len(MARK)) == MARK then return end
+  elseif ev == "CHAT_MSG_CHANNEL_NOTICE" or ev == "CHAT_MSG_CHANNEL_NOTICE_USER"
+      or ev == "CHAT_MSG_CHANNEL_JOIN" or ev == "CHAT_MSG_CHANNEL_LEAVE" then
+    if isOurChannel(arg4) or isOurChannel(arg8) or isOurChannel(arg1) then return end
+  end
+  return orig_ChatFrame_OnEvent(ev)
+end
+
 ------------------------------------------------------------------ view hooks (used by standings.lua)
 
 function ext:IsActive()
@@ -142,6 +182,8 @@ local function finish(req)
   refreshWindow()
 end
 
+local NOBODY = "No Blades of Wrynn member (rank " .. MIN_RANK_NAME .. "+ with the addon) is online to answer. Showing the last saved list."
+
 local function fail(req, text)
   if req.manual and text then say(text) end
   finish(req)
@@ -159,39 +201,14 @@ local function pickNext(req)
   req.chunks = {}
   req.total = nil
   req.got = 0
-  SendAddonMessage(PREFIX, "XR;" .. req.id, "WHISPER", who)
+  send("XR;" .. req.id .. ";" .. who)
   local idx = req.offerIdx
   after(PICK_TIMEOUT, function()
     if req == cur and not req.done and req.offerIdx == idx then
       pickNext(req)   -- that member never finished; try the next one who offered
+      if not req.picking then fail(req, NOBODY) end
     end
   end)
-end
-
-local function sendBatch(req)
-  if req ~= cur or req.done then return end
-  if req.picking then
-    after(BATCH_WAIT, function() sendBatch(req) end)
-    return
-  end
-  if req.idx > table.getn(req.targets) then
-    if req.offerIdx >= table.getn(req.offers) then
-      fail(req, "No Blades of Wrynn member (rank " .. MIN_RANK_NAME .. "+ with the addon) answered. Showing the last saved list. Try again later, or /sepgpask <name>.")
-    end
-    return
-  end
-  for i = 1, BATCH_SIZE do
-    local t = req.targets[req.idx]
-    if not t then break end
-    SendAddonMessage(PREFIX, "XQ;" .. req.id, "WHISPER", t)
-    req.idx = req.idx + 1
-  end
-  after(BATCH_WAIT, function() sendBatch(req) end)
-end
-
-local function newRequest(manual)
-  return {id = tostring(math.random(100000, 999999)), manual = manual, targets = {}, idx = 1,
-          offers = {}, offerIdx = 0, picking = false, chunks = {}, got = 0, done = false}
 end
 
 local function startRequest(manual)
@@ -202,57 +219,23 @@ local function startRequest(manual)
   end
   local s = sepgp_external_snapshot
   if (not manual) and s and s.got and (time() - s.got) < AUTO_MIN_AGE then return end
-  if GetTime() - lastWho < WHO_COOLDOWN then
-    if manual then say("Please wait a few seconds before refreshing again.") end
-    return
-  end
-  lastWho = GetTime()
-  cur = newRequest(manual)
-  whoReq = {req = cur, wasVisible = (FriendsFrame and FriendsFrame:IsVisible()) and true or false}
-  SetWhoToUI(1)
-  SendWho('g-"' .. GUILD_NAME .. '"')
+  local req = {id = tostring(math.random(100000, 999999)), manual = manual,
+               offers = {}, offerIdx = 0, picking = false, chunks = {}, got = 0, done = false}
+  cur = req
   refreshWindow()
-  -- if /who never answers, give up
-  local req = cur
-  after(15, function()
-    if cur == req and whoReq and whoReq.req == req then
-      whoReq = nil
-      SetWhoToUI(0)
-      fail(req, "Could not search for Blades of Wrynn members (/who gave no answer).")
+  withChannel(function()
+    if req ~= cur or req.done then return end
+    send("XQ;" .. req.id)
+    after(OFFER_WAIT, function()
+      if req == cur and not req.done and not req.picking then fail(req, NOBODY) end
+    end)
+  end)
+  -- channel never came up
+  after(OFFER_WAIT + 12, function()
+    if req == cur and not req.done and not req.picking then
+      fail(req, "Could not reach the Blades of Wrynn sync channel.")
     end
   end)
-end
-
-local function onWhoList()
-  if not whoReq then return end
-  local wr = whoReq
-  whoReq = nil
-  SetWhoToUI(0)
-  if FriendsFrame and FriendsFrame:IsVisible() and not wr.wasVisible then
-    HideUIPanel(FriendsFrame)
-  end
-  local req = wr.req
-  if req ~= cur then return end
-  local me = UnitName("player")
-  local targets = {}
-  local num = GetNumWhoResults()
-  for i = 1, num do
-    local name, guild = GetWhoInfo(i)
-    if name and name ~= me and guild == GUILD_NAME then
-      table.insert(targets, name)
-    end
-  end
-  for i = table.getn(targets), 2, -1 do
-    local j = math.random(i)
-    targets[i], targets[j] = targets[j], targets[i]
-  end
-  while table.getn(targets) > MAX_TARGETS do table.remove(targets) end
-  if table.getn(targets) == 0 then
-    fail(req, "No Blades of Wrynn members are online right now. Showing the last saved list.")
-    return
-  end
-  req.targets = targets
-  sendBatch(req)
 end
 
 local function commit(req, sender)
@@ -293,7 +276,7 @@ local function buildRows()
   return rows
 end
 
-local function serve(to, id)
+local function serve(id)
   local rows = buildRows()
   local chunks, buf = {}, ""
   for i = 1, table.getn(rows) do
@@ -306,50 +289,57 @@ local function serve(to, id)
   end
   if buf ~= "" then table.insert(chunks, buf) end
   local total = table.getn(chunks)
-  if total == 0 then return end
   for seq = 1, total do
     local msg = string.format("XL;%s;%d;%d;%s", id, seq, total, chunks[seq])
-    after(seq * 0.25, function() SendAddonMessage(PREFIX, msg, "WHISPER", to) end)
+    after(seq * CHUNK_SPACING, function() send(msg) end)
   end
+end
+
+-- only registered external mains ({X:Name} in an officer note) may be served
+local function isRegisteredExternal(name)
+  sepgp:buildExternalMainsTable()
+  if not sepgp.external_mains then return false end
+  return sepgp.external_mains[string.lower(name)] ~= nil
 end
 
 ------------------------------------------------------------------ messages
 
-local function onAddon(prefix, msg, channel, sender)
-  if prefix ~= PREFIX or channel ~= "WHISPER" then return end
+local function onChannelMsg(text, sender)
   if not sender or sender == UnitName("player") then return end
+  if string.sub(text, 1, string.len(MARK)) ~= MARK then return end
+  local msg = string.sub(text, string.len(MARK) + 1)
 
-  -- XQ: someone asks who can serve standings
+  -- XQ: an external main asks who can serve standings
   local _, _, qid = string.find(msg, "^XQ;(%d+)$")
   if qid then
-    if not canServe() then return end
+    if not serverJoined or not canServe() then return end
+    if not isRegisteredExternal(sender) then return end
     local last = lastAnswered[sender]
     if last and GetTime() - last < 3 then return end
     lastAnswered[sender] = GetTime()
-    after(math.random() * 0.8, function()
-      SendAddonMessage(PREFIX, "XA;" .. qid, "WHISPER", sender)
-    end)
+    after(math.random() * 0.8, function() send("XA;" .. qid .. ";" .. sender) end)
     return
   end
 
-  -- XR: the requester picked us
-  local _, _, rid = string.find(msg, "^XR;(%d+)$")
+  -- XR: the requester picked one of us
+  local _, _, rid, rto = string.find(msg, "^XR;(%d+);([^;]+)$")
   if rid then
-    if not canServe() then return end
+    if rto ~= UnitName("player") then return end
+    if not canServe() or not isRegisteredExternal(sender) then return end
     local last = lastServed[sender]
     if last and GetTime() - last < SERVE_COOLDOWN then return end
     lastServed[sender] = GetTime()
     GuildRoster() -- keep our own roster fresh for next time
-    serve(sender, rid)
+    serve(rid)
     return
   end
 
   if not cur then return end
 
   -- XA: a Squire+ member offers to serve our request
-  local _, _, aid = string.find(msg, "^XA;(%d+)$")
+  local _, _, aid, ato = string.find(msg, "^XA;(%d+);([^;]+)$")
   if aid then
-    if aid ~= cur.id or cur.done then return end
+    if aid ~= cur.id or ato ~= UnitName("player") or cur.done then return end
     for i = 1, table.getn(cur.offers) do
       if cur.offers[i] == sender then return end
     end
@@ -372,13 +362,25 @@ local function onAddon(prefix, msg, channel, sender)
   end
 end
 
-frame:RegisterEvent("CHAT_MSG_ADDON")
-frame:RegisterEvent("WHO_LIST_UPDATE")
+frame:RegisterEvent("CHAT_MSG_CHANNEL")
+frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 frame:SetScript("OnEvent", function()
-  if event == "CHAT_MSG_ADDON" then
-    onAddon(arg1, arg2, arg3, arg4)
-  elseif event == "WHO_LIST_UPDATE" then
-    onWhoList()
+  if event == "CHAT_MSG_CHANNEL" then
+    if isOurChannel(arg4) then onChannelMsg(arg1, arg2) end
+  elseif event == "PLAYER_ENTERING_WORLD" then
+    frame:UnregisterEvent("PLAYER_ENTERING_WORLD")
+    -- Squire+ members join the hidden channel once their guild data is loaded
+    local function tryJoin(n)
+      if IsInGuild() then GuildRoster() end
+      after(5, function()
+        if canServe() then
+          withChannel(function() serverJoined = true end)
+        elseif n < 4 then
+          tryJoin(n + 1)
+        end
+      end)
+    end
+    after(20, function() tryJoin(1) end)
   end
 end)
 
@@ -397,20 +399,4 @@ SlashCmdList["SEPGPSTANDING"] = function()
   end
   sepgp_standings:Toggle(true)
   startRequest(true)
-end
-
-SLASH_SEPGPASK1 = "/sepgpask"
-SlashCmdList["SEPGPASK"] = function(name)
-  if not notBoW() then return end
-  if not name or name == "" then
-    say("Usage: /sepgpask <Blades of Wrynn member name>")
-    return
-  end
-  if cur then cur.manual = true else
-    cur = newRequest(true)
-    local req = cur
-    after(20, function() if cur == req and not req.done and not req.picking then fail(req, "No answer from " .. name .. ".") end end)
-  end
-  SendAddonMessage(PREFIX, "XQ;" .. cur.id, "WHISPER", name)
-  refreshWindow()
 end
