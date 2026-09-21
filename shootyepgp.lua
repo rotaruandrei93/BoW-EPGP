@@ -16,6 +16,7 @@ sepgp.VARS = {
   max = 1000,
   timeout = 60,
   minlevel = 55,
+  bidtimer = 6,
   maxloglines = 500,
   prefix = "SEPGP_PREFIX",
   reservechan = "Reserves",
@@ -65,9 +66,9 @@ local admincmd, membercmd = {type = "group", handler = sepgp, args = {
     bids = {
       type = "execute",
       name = L["Bids"],
-      desc = L["Show Bids Table."],
+      desc = "Print current bid status.",
       func = function()
-        sepgp_bids:Toggle()
+        sepgp:printBidStatus()
       end,
       order = 1,
     },
@@ -232,7 +233,6 @@ local admincmd, membercmd = {type = "group", handler = sepgp, args = {
             sepgp.bid_item.price or "?",
             sepgp_bid_popup_ml or sepgp._playerName
           )
-          sepgp_bids:Toggle(true)
         else
           sepgp:defaultPrint("No active bid to show.")
         end
@@ -542,6 +542,18 @@ function sepgp:buildMenu()
       end,
       hidden = function() return not admin() end,
     }
+    options.args["set_bid_timer"] = {
+      type = "range",
+      name = "Bid Timer (seconds)",
+      desc = "How many seconds the bid countdown runs before auto-resolving.",
+      order = 119,
+      get = function() return sepgp_bidtimer or sepgp.VARS.bidtimer end,
+      set = function(v) sepgp_bidtimer = v end,
+      min = 3,
+      max = 30,
+      step = 1,
+      hidden = function() return not admin() end,
+    }
     options.args["reset"] = {
      type = "execute",
      name = L["Reset EPGP"],
@@ -566,6 +578,7 @@ function sepgp:OnInitialize() -- ADDON_LOADED (1) unless LoD
   if sepgp_saychannel == nil then sepgp_saychannel = "GUILD" end
   if sepgp_decay == nil then sepgp_decay = sepgp.VARS.decay end
   if sepgp_minep == nil then sepgp_minep = sepgp.VARS.minep end
+  if sepgp_bidtimer == nil then sepgp_bidtimer = sepgp.VARS.bidtimer end
   if sepgp_progress == nil then sepgp_progress = "T3" end
   if sepgp_discount == nil then sepgp_discount = 0.25 end
   if sepgp_altspool == nil then sepgp_altspool = false end
@@ -1270,9 +1283,6 @@ function sepgp:refreshPRTablets()
   --if not T:IsAttached("sepgp_standings") then
   sepgp_standings:Refresh()
   --end
-  --if not T:IsAttached("sepgp_bids") then
-  sepgp_bids:Refresh()
-  --end
 end
 
 ---------------------
@@ -1667,7 +1677,7 @@ sepgp.independentProfile = true
 function sepgp:OnTooltipUpdate()
   local hint = L["|cffffff00Click|r to toggle Standings.%s \n|cffffff00Right-Click|r for Options."]
   if (admin()) then
-    hint = string.format(hint,L[" \n|cffffff00Ctrl+Click|r to toggle Reserves. \n|cffffff00Alt+Click|r to toggle Bids. \n|cffffff00Shift+Click|r to toggle Loot. \n|cffffff00Ctrl+Alt+Click|r to toggle Alts. \n|cffffff00Ctrl+Shift+Click|r to toggle Logs."])
+    hint = string.format(hint,L[" \n|cffffff00Ctrl+Click|r to toggle Reserves. \n|cffffff00Shift+Click|r to toggle Loot. \n|cffffff00Ctrl+Alt+Click|r to toggle Alts. \n|cffffff00Ctrl+Shift+Click|r to toggle Logs."])
   else
     hint = string.format(hint,"")
   end
@@ -1684,8 +1694,6 @@ function sepgp:OnClick()
     sepgp_reserves:Toggle()
   elseif (IsShiftKeyDown() and is_admin) then
     sepgp_loot:Toggle()      
-  elseif (IsAltKeyDown() and is_admin) then
-    sepgp_bids:Toggle()
   else
     sepgp_standings:Toggle()
   end
@@ -2097,7 +2105,6 @@ function sepgp:captureLootCall(text, sender)
           self:ScheduleEvent("shootyepgpBidMsg3", function()
             SendChatMessage("[EPGP] Priority: MS > FLEX > OS > TM. TM is random roll, 0 GP. PASS allows you to withdraw your current bid if you change your mind.", "RAID")
           end, 3)
-          sepgp_bids:Toggle(true)
           -- Feature 1: Broadcast bid item and clear to raid
           self:addonMessage("BID;CLEAR;0", "RAID")
           -- Send item link info with ML name, GP cost, display name, and full link
@@ -2107,6 +2114,9 @@ function sepgp:captureLootCall(text, sender)
           self:addonMessage(item_msg, "RAID")
           -- Show popup on ML's screen too
           self:ShowBidPopup(itemLink, sepgp.bid_item.name, gp_cost, self._playerName)
+          -- Auto-start the countdown the moment bids open -- ML shouldn't
+          -- have to click "Countdown" manually for the roll to begin.
+          sepgp_bids:bidCountdown()
         end
         self:bidPrint(itemLink,sender,mskw_found,oskw_found,whisperkw_found)
       end
@@ -2150,7 +2160,7 @@ function sepgp:captureBid(text, sender)
     removeBid(sepgp.bids_tm)
     bids_blacklist[sender] = nil -- allow re-bidding after pass
     self:addonMessage(string.format("BID;PASS;%s", sender), "RAID")
-    sepgp_bids:Toggle(true)
+    self:UpdateBidPopupList()
     return
   end
 
@@ -2165,7 +2175,7 @@ function sepgp:captureBid(text, sender)
         bids_blacklist[sender] = true
         table.insert(sepgp.bids_tm, {name, class})
         self:addonMessage(string.format("BID;TM;%s;%s", name, class), "RAID")
-        sepgp_bids:Toggle(true)
+        self:UpdateBidPopupList()
         return
       end
     end
@@ -2175,7 +2185,7 @@ function sepgp:captureBid(text, sender)
       bids_blacklist[sender] = true
       table.insert(sepgp.bids_tm, {sender, ext_class})
       self:addonMessage(string.format("BID;TM;%s;%s", sender, ext_class), "RAID")
-      sepgp_bids:Toggle(true)
+      self:UpdateBidPopupList()
     end
     return
   end
@@ -2222,7 +2232,7 @@ function sepgp:captureBid(text, sender)
         if main_name then bid_msg = bid_msg .. ";" .. main_name end
         self:addonMessage(bid_msg, "RAID")
       end
-      sepgp_bids:Toggle(true)
+      self:UpdateBidPopupList()
       return
     end
   end
@@ -2249,7 +2259,7 @@ function sepgp:captureBid(text, sender)
       local bid_msg = string.format("BID;OS;%s;%s;%d;%d;%s", sender, ext_class, ep, gp, pr_str)
       self:addonMessage(bid_msg, "RAID")
     end
-    sepgp_bids:Toggle(true)
+    self:UpdateBidPopupList()
   end
 end
 
@@ -2276,10 +2286,36 @@ function sepgp:clearBids(reset)
   end
   running_bid = false
   sepgp_bids._counterText = ""
-  -- Re-arm the auto-show: a genuinely new bid cycle should still surface the
-  -- window even if it was closed during the previous item.
-  sepgp_bids.userClosed = false
-  sepgp_bids:Refresh()
+  self:UpdateBidPopupList()
+  self:HideBidPopup()
+end
+
+-- /sepgp bids: local-only status printout for the ML. The old bids window
+-- showed this live in a Tablet frame; now everything below already gets
+-- broadcast to raid chat as it happens (bid announcements, countdown ticks,
+-- winner announcement), so this is just a manual "where do things stand
+-- right now" check that only the caller sees.
+function sepgp:printBidStatus()
+  if not (sepgp.bid_item and (sepgp.bid_item.link or sepgp.bid_item.name)) then
+    self:defaultPrint("No active bid.")
+    return
+  end
+  self:defaultPrint(string.format("Current bid: %s (GP: %s)", sepgp.bid_item.name or "?", tostring(sepgp.bid_item.price or "?")))
+  local function listBids(label, list)
+    if table.getn(list) == 0 then return end
+    local names = {}
+    for i = 1, table.getn(list) do
+      table.insert(names, list[i][1])
+    end
+    self:defaultPrint(string.format("%s: %s", label, table.concat(names, ", ")))
+  end
+  listBids("MS", sepgp.bids_main)
+  listBids("FLEX", sepgp.bids_flex)
+  listBids("OS", sepgp.bids_off)
+  listBids("TM", sepgp.bids_tm)
+  if table.getn(sepgp.bids_main) == 0 and table.getn(sepgp.bids_flex) == 0 and table.getn(sepgp.bids_off) == 0 and table.getn(sepgp.bids_tm) == 0 then
+    self:defaultPrint("No bids yet.")
+  end
 end
 
 ---------------------------------
@@ -2431,15 +2467,23 @@ function sepgp:announceWinner(playerName, specType, itemDisplayName)
   local ep = self:get_ep_v3(playerName) or 0
   local gp = self:get_gp_v3(playerName) or sepgp.VARS.basegp
   local pr = ep / gp
-  -- Use passed itemDisplayName, fall back to bid_item only as last resort
+  -- Use passed itemDisplayName (now expected to be the real |Hitem:..|h
+  -- link, not the color-only extractItemName output), fall back to
+  -- bid_item.linkFull (also a real link) and only then the non-clickable
+  -- bid_item.name as a last resort.
   local itemName = ""
   if itemDisplayName and itemDisplayName ~= "" then
     itemName = " " .. itemDisplayName
+  elseif sepgp.bid_item and sepgp.bid_item.linkFull and sepgp.bid_item.linkFull ~= "" then
+    itemName = " " .. sepgp.bid_item.linkFull
   elseif sepgp.bid_item and sepgp.bid_item.name and sepgp.bid_item.name ~= "" then
     itemName = " " .. sepgp.bid_item.name
   end
-  local cleanItemName = sepgp:stripColors(itemName)
-  local msg = string.format("[EPGP] %s won%s (%s) - PR: %.2f (EP: %d / GP: %d)", playerName, cleanItemName, specType, pr, ep, gp)
+  -- Colored/bracketed item name (from extractItemName) is kept as-is now,
+  -- so the item shows highlighted in raid chat just like the TRADE ALERT
+  -- and bid-open messages do -- previously this stripped the color codes
+  -- right before sending, so only this message came out plain.
+  local msg = string.format("[EPGP] %s won%s (%s) - PR: %.2f (EP: %d / GP: %d)", playerName, itemName, specType, pr, ep, gp)
   SendChatMessage(msg, "RAID")
   sepgp:writeDebugLog(string.format("ANNOUNCE | %s won%s (%s) PR=%.2f", playerName, itemName, specType, pr))
 end
@@ -2461,8 +2505,6 @@ function sepgp:clearBidsQuiet()
   end
   running_bid = false
   sepgp_bids._counterText = ""
-  sepgp_bids.userClosed = false
-  sepgp_bids:Refresh()
   self:HideBidPopup()
 end
 
@@ -2475,9 +2517,19 @@ local sepgp_bid_popup_ml = nil -- master looter name for whispers
 function sepgp:CreateBidPopup()
   if sepgp_bid_popup then return sepgp_bid_popup end
 
+  -- Layout constants (also used by LayoutBidPopup/UpdateBidPopupList below)
+  sepgp.BID_POPUP_HEADER_H = 70   -- f TOP down to bottom of statusText
+  sepgp.BID_POPUP_GAP = 6
+  sepgp.BID_POPUP_BUTTONBAR_H = 30
+  sepgp.BID_POPUP_DIVIDER_H = 2
+  sepgp.BID_POPUP_ROW_H = 14
+  sepgp.BID_POPUP_BOTTOM_PAD = 10
+  sepgp.BID_POPUP_MIN_H_EXPANDED = 140
+  sepgp.BID_POPUP_MIN_H_COLLAPSED = 90
+
   local f = CreateFrame("Frame", "SepgpBidPopup", UIParent)
   f:SetWidth(280)
-  f:SetHeight(140)
+  f:SetHeight(sepgp.BID_POPUP_MIN_H_EXPANDED)
   f:SetPoint("TOP", UIParent, "TOP", 0, -120)
   f:SetBackdrop({
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
@@ -2537,17 +2589,37 @@ function sepgp:CreateBidPopup()
   gpText:SetTextColor(0.6, 0.8, 0.6)
   f.gpText = gpText
 
-  -- Status text (shows your current bid)
-  local statusText = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  statusText:SetPoint("TOP", gpText, "BOTTOM", 0, -4)
+  -- Status text (shows your current bid). Wrapped in a button so, once the
+  -- bid buttons are collapsed, clicking it brings them back to change your
+  -- bid instead of having to close/reopen the whole popup.
+  local statusBtn = CreateFrame("Button", nil, f)
+  statusBtn:SetPoint("TOP", gpText, "BOTTOM", 0, -4)
+  statusBtn:SetWidth(260)
+  statusBtn:SetHeight(14)
+  local statusText = statusBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  statusText:SetAllPoints()
   statusText:SetText("")
   statusText:SetTextColor(0.7, 0.7, 0.7)
-  f.statusText = statusText
+  statusBtn.text = statusText
+  statusBtn:SetScript("OnClick", function()
+    if f.buttonBar and not f.buttonBar:IsShown() then
+      f.buttonBar:Show()
+      sepgp:LayoutBidPopup()
+    end
+  end)
+  f.statusBtn = statusBtn
+  f.statusText = statusText -- kept for backwards compatibility with existing callers
 
-  -- Bid buttons
+  -- Bid buttons, grouped in a single bar so they can be shown/hidden as one
+  -- unit once the player has made a choice.
+  local buttonBar = CreateFrame("Frame", nil, f)
+  buttonBar:SetWidth(270)
+  buttonBar:SetHeight(sepgp.BID_POPUP_BUTTONBAR_H)
+  buttonBar:SetPoint("TOP", statusBtn, "BOTTOM", 0, -sepgp.BID_POPUP_GAP)
+  f.buttonBar = buttonBar
+
   local btnWidth = 46
   local btnHeight = 22
-  local btnY = -92
   local buttons = {
     {label = "|cffFF3333MS|r", keyword = "MS", xoff = -108},
     {label = "|cffFFAA00FLEX|r", keyword = "FLEX", xoff = -54},
@@ -2557,10 +2629,10 @@ function sepgp:CreateBidPopup()
   }
 
   for _, bdata in ipairs(buttons) do
-    local btn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    local btn = CreateFrame("Button", nil, buttonBar, "UIPanelButtonTemplate")
     btn:SetWidth(btnWidth)
     btn:SetHeight(btnHeight)
-    btn:SetPoint("TOP", f, "TOP", bdata.xoff, btnY)
+    btn:SetPoint("TOP", buttonBar, "TOP", bdata.xoff, 0)
     btn:SetText(bdata.keyword)
     btn.keyword = bdata.keyword
     btn:SetScript("OnClick", function()
@@ -2571,15 +2643,33 @@ function sepgp:CreateBidPopup()
         end
         SendChatMessage(this.keyword, "WHISPER", nil, sepgp_bid_popup_ml)
         if this.keyword == "PASS" then
-          f.statusText:SetText("|cff999999You withdrew your bid|r")
+          f.statusText:SetText("|cff999999You withdrew your bid|r  |cff66aaff(click to change)|r")
           f.currentBid = nil
         else
-          f.statusText:SetText("Your bid: |cffFFCC00" .. this.keyword .. "|r")
+          f.statusText:SetText("Your bid: |cffFFCC00" .. this.keyword .. "|r  |cff66aaff(click to change)|r")
           f.currentBid = this.keyword
         end
+        -- Collapse the button row once a choice is made. The people who
+        -- aren't interested can just close the window now; everyone else
+        -- can keep watching who else bids, below, in the same window.
+        f.buttonBar:Hide()
+        sepgp:LayoutBidPopup()
       end
     end)
   end
+
+  -- Divider between the buttons and the live "who bid what" list. Only
+  -- shown while the button bar is shown, matching the mockup.
+  local divider = f:CreateTexture(nil, "ARTWORK")
+  divider:SetHeight(sepgp.BID_POPUP_DIVIDER_H)
+  divider:SetWidth(260)
+  divider:SetTexture(0.5, 0.3, 0.7, 0.8)
+  f.divider = divider
+
+  -- Live list of who has bid what so far, pulled from the same
+  -- sepgp.bids_main/flex/off/tm tables the officer bid window uses.
+  f.listRows = {}
+  f.listRowCount = 0
 
   -- Close button
   local closeBtn = CreateFrame("Button", nil, f, "UIPanelCloseButton")
@@ -2589,6 +2679,98 @@ function sepgp:CreateBidPopup()
 
   sepgp_bid_popup = f
   return f
+end
+
+-- Repositions the divider/button bar/list rows and resizes the window based
+-- on whether the button bar is currently shown and how many bidders are
+-- listed. Call after any change to f.buttonBar's visibility or to the row
+-- list (UpdateBidPopupList calls this for you).
+function sepgp:LayoutBidPopup()
+  local f = sepgp_bid_popup
+  if not f then return end
+
+  local GAP = sepgp.BID_POPUP_GAP
+  local ROW_H = sepgp.BID_POPUP_ROW_H
+  local rowCount = f.listRowCount or 0
+  local buttonsShown = f.buttonBar and f.buttonBar:IsShown()
+  local listAnchorFrame, listAnchorOffset, listTopOffset
+
+  if buttonsShown then
+    f.divider:ClearAllPoints()
+    f.divider:SetPoint("TOP", f.buttonBar, "BOTTOM", 0, -GAP)
+    f.divider:Show()
+    listAnchorFrame = f.divider
+    listAnchorOffset = -GAP
+    listTopOffset = sepgp.BID_POPUP_HEADER_H + GAP + sepgp.BID_POPUP_BUTTONBAR_H
+      + GAP + sepgp.BID_POPUP_DIVIDER_H + GAP
+  else
+    f.divider:Hide()
+    listAnchorFrame = f.statusBtn
+    listAnchorOffset = -GAP
+    listTopOffset = sepgp.BID_POPUP_HEADER_H + GAP
+  end
+
+  local y = 0
+  for i = 1, rowCount do
+    local fs = f.listRows[i]
+    fs:ClearAllPoints()
+    if i == 1 then
+      fs:SetPoint("TOPLEFT", listAnchorFrame, "BOTTOMLEFT", 10, listAnchorOffset)
+    else
+      fs:SetPoint("TOPLEFT", f.listRows[i-1], "BOTTOMLEFT", 0, -2)
+    end
+    fs:Show()
+  end
+  for i = rowCount + 1, table.getn(f.listRows) do
+    f.listRows[i]:Hide()
+  end
+
+  local minH = buttonsShown and sepgp.BID_POPUP_MIN_H_EXPANDED or sepgp.BID_POPUP_MIN_H_COLLAPSED
+  local totalHeight = listTopOffset + (rowCount * ROW_H) + sepgp.BID_POPUP_BOTTOM_PAD
+  if totalHeight < minH then totalHeight = minH end
+  f:SetHeight(totalHeight)
+end
+
+-- Rebuilds the "who bid what" list inside the raider bid popup from the
+-- current sepgp.bids_main/flex/off/tm tables. Safe to call any time these
+-- tables change; it's a no-op if the popup hasn't been created yet.
+function sepgp:UpdateBidPopupList()
+  local f = sepgp_bid_popup
+  if not f then return end
+
+  local rows = {}
+  local function addRows(list, spec, hasPR)
+    for i = 1, table.getn(list) do
+      local entry = list[i]
+      local name, class = entry[1], entry[2]
+      local coloredName = C:Colorize(BC:GetHexColor(class), name)
+      if hasPR then
+        local pr = entry[5] or 0
+        table.insert(rows, string.format("%s rolled  PR %.2f  |cffFFCC00%s|r", coloredName, pr, spec))
+      else
+        table.insert(rows, string.format("%s rolled  |cffFFCC00%s|r", coloredName, spec))
+      end
+    end
+  end
+  addRows(sepgp.bids_main or {}, "MS", true)
+  addRows(sepgp.bids_flex or {}, "FLEX", true)
+  addRows(sepgp.bids_off or {}, "OS", true)
+  addRows(sepgp.bids_tm or {}, "TM", false)
+
+  local rowCount = table.getn(rows)
+  for i = 1, rowCount do
+    local fs = f.listRows[i]
+    if not fs then
+      fs = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+      fs:SetWidth(240)
+      fs:SetJustifyH("LEFT")
+      f.listRows[i] = fs
+    end
+    fs:SetText(rows[i])
+  end
+  f.listRowCount = rowCount
+
+  self:LayoutBidPopup()
 end
 
 function sepgp:ShowBidPopup(itemLink, itemName, gpCost, mlName)
@@ -2613,6 +2795,11 @@ function sepgp:ShowBidPopup(itemLink, itemName, gpCost, mlName)
   -- Reset status
   f.statusText:SetText("Whisper " .. (mlName or "ML") .. " or click a button")
   f.currentBid = nil
+
+  -- A new item: re-show the button bar (in case it was collapsed for the
+  -- previous item) and rebuild the who-bid-what list from scratch.
+  f.buttonBar:Show()
+  self:UpdateBidPopupList()
 
   f:Show()
 end
@@ -2651,7 +2838,6 @@ function sepgp:startTestBid(gp_cost)
   self:ScheduleEvent("shootyepgpBidTimeout", self.clearBids, 300, self)
   running_bid = true
   self:debugPrint("TEST MODE: Capturing bids for 5min.")
-  sepgp_bids:Toggle(true)
   -- Send the 3 announcement messages
   SendChatMessage(string.format("[EPGP] TEST - Bids open: Test Epic Item (GP: %d) - Whisper me MS, FLEX, OS, or TM to bid!", cost), "RAID_WARNING")
   -- Stagger messages 2 and 3 to avoid WoW server-side chat throttle
@@ -2665,6 +2851,8 @@ function sepgp:startTestBid(gp_cost)
   self:addonMessage(string.format("BID;ITEM;test-item;%s;%d", self._playerName, cost), "RAID")
   -- Show popup locally for testing
   self:ShowBidPopup(nil, "|cffa335ee[Test Epic Item]|r", cost, self._playerName)
+  -- Auto-start the countdown, same as a real bid opening.
+  sepgp_bids:bidCountdown()
   self:defaultPrint("Test bid started. Whisper MS, FLEX, OS, TM, or PASS to test. Use '/sepgp testend' to end.")
 end
 
@@ -2722,8 +2910,7 @@ function sepgp:endBidNow()
   -- Mark the link so the loot capture chain won't fire a duplicate popup
   self._popupShownLinks = self._popupShownLinks or {}
   self._popupShownLinks[sepgp.bid_item.linkFull] = GetTime()
-  self:ShowResolutionWindow(data)
-  self:defaultPrint(string.format("Bid ended. Resolution shown for %s.", looter_name))
+  self:AutoResolveLoot(data)
 end
 
 function sepgp:endTestBid()
@@ -2781,11 +2968,11 @@ function sepgp:endTestBid()
     else
       self:writeDebugLog("ENDTEST_DIALOG | NIL - popup not created")
     end
+    self:defaultPrint(string.format("Test resolution shown. Looter: %s. Review and Confirm & Charge.", looter_name))
   else
-    self:ShowResolutionWindow(data)
-    self:writeDebugLog("ENDTEST_DIALOG | resolution_window | item_link=" .. tostring(item_link))
+    self:AutoResolveLoot(data)
+    self:writeDebugLog("ENDTEST_DIALOG | auto_resolved | item_link=" .. tostring(item_link))
   end
-  self:defaultPrint(string.format("Test resolution shown. Looter: %s. Review and Confirm & Charge.", looter_name))
 end
 
 -- Inject a fake bid for test mode. Simulates another player bidding
@@ -2823,7 +3010,6 @@ function sepgp:injectTestBid(input)
     removeBid(sepgp.bids_tm)
     bids_blacklist[name] = nil
     self:defaultPrint(string.format("Test: %s withdrew bid (PASS)", name))
-    sepgp_bids:Toggle(true)
     return
   end
   if bids_blacklist[name] then
@@ -2848,7 +3034,6 @@ function sepgp:injectTestBid(input)
     table.insert(sepgp.bids_off, {name, "Unknown", fake_ep, fake_gp, fake_pr})
     self:defaultPrint(string.format("Test: %s bid OS (PR %.2f)", name, fake_pr))
   end
-  sepgp_bids:Toggle(true)
 end
 
 ----------------------------------------------
@@ -2934,7 +3119,6 @@ function sepgp:startTestWithItem(itemIdStr)
   -- Start bid timer
   self:ScheduleEvent("shootyepgpBidTimeout", self.clearBids, 300, self)
   running_bid = true
-  sepgp_bids:Toggle(true)
 
   -- Announce to raid (use full hyperlink for clickable item link in chat log)
   local displayName = sepgp.bid_item.name or itemName
@@ -2947,6 +3131,8 @@ function sepgp:startTestWithItem(itemIdStr)
   local bidLink = sepgp.bid_item.linkFull or ""
   self:addonMessage(string.format("BID;ITEM;%s;%s;%d;%s;%s", itemString, self._playerName, price, bidName, bidLink), "RAID")
   self:ShowBidPopup(itemLink, displayName, price, self._playerName)
+  -- Auto-start the countdown, same as a real bid opening.
+  sepgp_bids:bidCountdown()
 
   self:defaultPrint(string.format("Test started: %s (ID: %d, GP: %d, OS: %d)", displayName, itemId, price, off_price))
   self:defaultPrint("Use /sepgp testbid ms|os|tm <Name> to simulate bids, /sepgp testend to resolve.")
@@ -2974,7 +3160,6 @@ function sepgp:handleBidSync(message, sender)
       sepgp.bids_flex = {}
       sepgp.bids_off = {}
       sepgp.bids_tm = {}
-      sepgp_bids:Refresh()
       sepgp:HideBidPopup()
     end
     return
@@ -3027,7 +3212,8 @@ function sepgp:handleBidSync(message, sender)
           itemLink = nil
         end
       end
-      sepgp_bids:Toggle(true)
+      -- The officer table stays master-looter-only now; non-ML raiders get
+      -- the merged bid popup below instead.
       -- Show the raider bid popup with item, GP cost, and ML name
       sepgp:ShowBidPopup(itemLink or itemString, sepgp.bid_item.name, gpCost, mlName)
     end
@@ -3050,7 +3236,7 @@ function sepgp:handleBidSync(message, sender)
       removeBidSync(sepgp.bids_flex)
       removeBidSync(sepgp.bids_off)
       removeBidSync(sepgp.bids_tm)
-      sepgp_bids:Toggle(true)
+      self:UpdateBidPopupList()
     end
     return
   end
@@ -3061,7 +3247,7 @@ function sepgp:handleBidSync(message, sender)
     local bidder_name = parts[3]
     local bidder_class = parts[4]
     table.insert(sepgp.bids_tm, {bidder_name, bidder_class})
-    sepgp_bids:Toggle(true)
+    self:UpdateBidPopupList()
     return
   end
 
@@ -3090,7 +3276,7 @@ function sepgp:handleBidSync(message, sender)
     else
       table.insert(sepgp.bids_off, entry)
     end
-    sepgp_bids:Toggle(true)
+    self:UpdateBidPopupList()
     return
   end
 end
@@ -3389,20 +3575,16 @@ function sepgp:setupPopupTooltip(dialog)
 end
 
 ----------------------------------------------
--- Phase 3: Loot Resolution Window
+-- Phase 4: Fully Automatic Loot Resolution (no popup, no manual confirm)
 ----------------------------------------------
--- Custom frame replacing StaticPopup + dropdown menu. Shows full item
--- route, all participants, GP summary in one view. "Confirm & Charge"
--- does everything in one click: GP charge, winner announce, TM roll,
--- DE assignment, raid chat, officer chat, advance queue.
---
--- WHY: The StaticPopup + dropdown was confusing (officer had to know
--- which action to pick) and didn't show the full picture before charging.
--- WHAT: Single custom frame, pre-computes resolution plan, shows it
--- transparently, one button to execute. Handles all 9 scenarios from
--- the continuation prompt (MS/OS + TM, TM-only 1/2 people, DE variants,
--- no bids straight DE).
-local sepgp_resolution_window = nil
+-- AutoResolveLoot(data) is the single entry point: pre-computes the
+-- resolution plan (analyzeLootResolution: MS > FLEX > OS, TM mule
+-- routed/awarded first, DE fallback for unclaimed items) and immediately
+-- executes it -- GP charge, winner announce, TM roll, DE assignment,
+-- raid chat, officer chat, loot history, advance queue. No frame, no
+-- Confirm/Remind Later/Cancel buttons -- there is nothing left to confirm.
+-- Callers: sepgp_bids's countdown (bids.lua), endBidNow, endTestBid, and
+-- showNextLootPopup (organic loot captured via WoW's master loot UI).
 local sepgp_resolution_data = nil
 local sepgp_resolution_plan = nil
 
@@ -3627,334 +3809,22 @@ function sepgp:analyzeLootResolution(data)
   return plan
 end
 
--- Create the resolution window frame (once, reused).
-function sepgp:CreateResolutionWindow()
-  if sepgp_resolution_window then return sepgp_resolution_window end
 
-  local f = CreateFrame("Frame", "SepgpResolutionWindow", UIParent)
-  f:SetWidth(440)
-  f:SetHeight(460)
-  f:SetPoint("CENTER", UIParent, "CENTER", 0, 40)
-  f:SetBackdrop({
-    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-    tile = true, tileSize = 16, edgeSize = 14,
-    insets = { left = 4, right = 4, top = 4, bottom = 4 }
-  })
-  f:SetBackdropColor(0.05, 0.08, 0.15, 0.94)
-  f:SetBackdropBorderColor(0.4, 0.6, 0.9, 0.9)
-  f:SetMovable(true)
-  f:EnableMouse(true)
-  f:RegisterForDrag("LeftButton")
-  f:SetScript("OnDragStart", function() this:StartMoving() end)
-  f:SetScript("OnDragStop", function() this:StopMovingOrSizing() end)
-  f:SetFrameStrata("DIALOG")
-  f:Hide()
-
-  -- Title
-  local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  title:SetPoint("TOP", f, "TOP", 0, -10)
-  title:SetText("|cffFFCC00[EPGP] Loot Resolution|r")
-  f.title = title
-
-  -- Close X button
-  local closeBtn = CreateFrame("Button", nil, f, "UIPanelCloseButton")
-  closeBtn:SetPoint("TOPRIGHT", f, "TOPRIGHT", -2, -2)
-  closeBtn:SetWidth(24)
-  closeBtn:SetHeight(24)
-  closeBtn:SetScript("OnClick", function()
-    sepgp:HideResolutionWindow()
-  end)
-
-  -- Item name (hoverable for tooltip)
-  local itemBtn = CreateFrame("Button", nil, f)
-  itemBtn:SetPoint("TOP", title, "BOTTOM", 0, -8)
-  itemBtn:SetWidth(400)
-  itemBtn:SetHeight(20)
-  local itemText = itemBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  itemText:SetAllPoints()
-  itemText:SetText("")
-  itemBtn.text = itemText
-  itemBtn:SetScript("OnEnter", function()
-    if f.itemLink then
-      local _, _, linkRef = string.find(f.itemLink, "|H([^|]+)|h")
-      GameTooltip:SetOwner(this, "ANCHOR_BOTTOM")
-      GameTooltip:SetHyperlink(linkRef or f.itemLink)
-      GameTooltip:Show()
-    end
-  end)
-  itemBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-  itemBtn:SetScript("OnClick", function()
-    if f.itemLink and IsShiftKeyDown() and ChatFrameEditBox:IsVisible() then
-      ChatFrameEditBox:Insert(f.itemLink)
-    end
-  end)
-  f.itemBtn = itemBtn
-
-  -- GP cost line
-  local gpText = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  gpText:SetPoint("TOP", itemBtn, "BOTTOM", 0, -4)
-  gpText:SetText("")
-  gpText:SetTextColor(0.6, 0.9, 0.6)
-  f.gpText = gpText
-
-  -- Bids section header
-  local bidsHeader = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  bidsHeader:SetPoint("TOPLEFT", f, "TOPLEFT", 20, -82)
-  bidsHeader:SetText("|cffFFCC00---- BIDS ----|r")
-  f.bidsHeader = bidsHeader
-
-  -- Bid lines (up to 8 lines for MS/FLEX/OS/TM combinations)
-  f.bidLines = {}
-  for i = 1, 8 do
-    local line = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    if i == 1 then
-      line:SetPoint("TOPLEFT", bidsHeader, "BOTTOMLEFT", 10, -4)
-    else
-      line:SetPoint("TOPLEFT", f.bidLines[i-1], "BOTTOMLEFT", 0, -2)
-    end
-    line:SetText("")
-    line:SetJustifyH("LEFT")
-    f.bidLines[i] = line
-  end
-
-  -- Route section header
-  local routeHeader = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  routeHeader:SetPoint("TOPLEFT", f, "TOPLEFT", 20, -220)
-  routeHeader:SetText("|cffFFCC00---- ITEM ROUTE ----|r")
-  f.routeHeader = routeHeader
-
-  -- Route lines (up to 5 steps)
-  f.routeLines = {}
-  for i = 1, 5 do
-    local line = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    if i == 1 then
-      line:SetPoint("TOPLEFT", routeHeader, "BOTTOMLEFT", 10, -4)
-    else
-      line:SetPoint("TOPLEFT", f.routeLines[i-1], "BOTTOMLEFT", 0, -2)
-    end
-    line:SetText("")
-    line:SetJustifyH("LEFT")
-    f.routeLines[i] = line
-  end
-
-  -- Summary line
-  local summary = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  summary:SetPoint("TOPLEFT", f, "TOPLEFT", 20, -340)
-  summary:SetText("")
-  summary:SetTextColor(1, 1, 0.6)
-  f.summary = summary
-
-  -- Warning line (red)
-  local warning = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  warning:SetPoint("TOPLEFT", summary, "BOTTOMLEFT", 0, -4)
-  warning:SetText("")
-  warning:SetTextColor(1, 0.3, 0.3)
-  warning:SetWidth(400)
-  warning:SetJustifyH("LEFT")
-  f.warning = warning
-
-  -- Confirm button
-  local confirmBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-  confirmBtn:SetWidth(140)
-  confirmBtn:SetHeight(26)
-  confirmBtn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 16, 14)
-  confirmBtn:SetText("CONFIRM & CHARGE")
-  confirmBtn:SetScript("OnClick", function()
-    sepgp:ResolveLootConfirm()
-  end)
-  f.confirmBtn = confirmBtn
-
-  -- Remind Later button
-  local remindBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-  remindBtn:SetWidth(120)
-  remindBtn:SetHeight(26)
-  remindBtn:SetPoint("BOTTOM", f, "BOTTOM", 0, 14)
-  remindBtn:SetText("Remind Later")
-  remindBtn:SetScript("OnClick", function()
-    sepgp:ResolveLootRemindLater()
-  end)
-  f.remindBtn = remindBtn
-
-  -- Cancel button (just closes, no action)
-  local cancelBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-  cancelBtn:SetWidth(100)
-  cancelBtn:SetHeight(26)
-  cancelBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -16, 14)
-  cancelBtn:SetText("Cancel")
-  cancelBtn:SetScript("OnClick", function()
-    sepgp:HideResolutionWindow()
-  end)
-  f.cancelBtn = cancelBtn
-
-  sepgp_resolution_window = f
-  return f
-end
-
--- Show the resolution window for a loot data entry.
-function sepgp:ShowResolutionWindow(data)
+-- Build the item's loot-data record, run analyzeLootResolution on it, and
+-- resolve it immediately via ResolveLootConfirm. data only needs to carry
+-- item/price info (time, item, bind, price, off_price) -- ResolveLootConfirm
+-- fills in the looter name/color from the plan's actual winner once it's
+-- computed, so it's always accurate even though nothing was "clicked".
+function sepgp:AutoResolveLoot(data)
   if not data then return end
-  local f = self:CreateResolutionWindow()
+  if data._gp_charged then return end
   sepgp_resolution_data = data
   sepgp_resolution_plan = self:analyzeLootResolution(data)
-  local plan = sepgp_resolution_plan
-
-  f.itemLink = plan.itemLink
-
-  -- Item text (use colored name)
-  f.itemBtn.text:SetText(plan.itemDisplayName or "Unknown Item")
-
-  -- GP cost line
-  if plan.gpCost > 0 then
-    f.gpText:SetText(string.format("GP: |cff50CD32%d|r  /  OS: |cff00CCCC%d|r", plan.gpCost, plan.osPrice))
-  else
-    f.gpText:SetText("|cff999999(no GP cost)|r")
-  end
-
-  -- Clear bid lines
-  for i = 1, table.getn(f.bidLines) do f.bidLines[i]:SetText("") end
-
-  -- Populate bid lines (show all bids with winner marker)
-  local lineIdx = 1
-  local winnerName = plan.winner and plan.winner.name or nil
-  local function addBidLine(label, bids, color)
-    if table.getn(bids) == 0 then return end
-    local names = {}
-    for i = 1, table.getn(bids) do
-      local entry = bids[i]
-      local name = entry[1]
-      local pr = entry[5] or 0
-      local marker = ""
-      if name == winnerName then marker = "  |cffFFCC00<-- WINNER|r" end
-      table.insert(names, string.format("%s (%.2f PR)%s", name, pr, marker))
-    end
-    if lineIdx <= table.getn(f.bidLines) then
-      f.bidLines[lineIdx]:SetText(color .. label .. ":|r  " .. table.concat(names, ", "))
-      lineIdx = lineIdx + 1
-    end
-  end
-  addBidLine("MS  ", plan.bidsMs,   "|cffFF3333")
-  addBidLine("FLEX", plan.bidsFlex, "|cffFFAA00")
-  addBidLine("OS  ", plan.bidsOs,   "|cff00CC00")
-  -- TM shown separately as it uses roll not PR
-  if table.getn(plan.bidsTm) > 0 then
-    local tmNames = {}
-    for i = 1, table.getn(plan.bidsTm) do
-      local name = plan.bidsTm[i][1]
-      local marker = ""
-      if name == plan.tm1 then
-        marker = "  |cff00FFFF(TM#1)|r"
-      elseif name == plan.tm2 then
-        marker = "  |cff00FFFF(TM#2)|r"
-      end
-      if self:isDisenchanter(name) then marker = marker .. " |cffB84DFF[DE]|r" end
-      table.insert(tmNames, name .. marker)
-    end
-    if lineIdx <= table.getn(f.bidLines) then
-      f.bidLines[lineIdx]:SetText("|cff00FFFFTM  :|r  " .. table.concat(tmNames, ", "))
-      lineIdx = lineIdx + 1
-    end
-  end
-  if lineIdx == 1 then
-    -- No bids at all
-    f.bidLines[1]:SetText("|cff999999(no bids received)|r")
-  end
-
-  -- Clear and populate route lines
-  for i = 1, table.getn(f.routeLines) do f.routeLines[i]:SetText("") end
-  for i = 1, table.getn(plan.route) do
-    if i <= table.getn(f.routeLines) then
-      local text = plan.route[i]
-      -- Color the final ">>" line green
-      if string.sub(text, 1, 2) == ">>" then
-        text = "|cff80FF80" .. text .. "|r"
-      end
-      f.routeLines[i]:SetText(text)
-    end
-  end
-
-  -- Summary line
-  local trades = 0
-  for i = 1, table.getn(plan.route) do
-    if string.find(plan.route[i], "trades to", 1, true) then trades = trades + 1 end
-  end
-  local gpSummary = "0"
-  if plan.winner then
-    gpSummary = string.format("%d to %s (%s)", plan.winner.gpCost, plan.winner.name, plan.winner.specType)
-  end
-  f.summary:SetText(string.format("Trades: %d    GP: %s", trades, gpSummary))
-
-  -- Warning line
-  if table.getn(plan.warnings) > 0 then
-    f.warning:SetText("!! " .. table.concat(plan.warnings, "   --   "))
-  else
-    f.warning:SetText("")
-  end
-
-  -- Confirm button label changes based on scenario
-  if plan.winner then
-    f.confirmBtn:SetText("CONFIRM & CHARGE")
-  elseif plan.noDE then
-    f.confirmBtn:SetText("CONFIRM (NO DE)")
-  else
-    f.confirmBtn:SetText("CONFIRM (0 GP)")
-  end
-
-  f:Show()
-  self:writeDebugLog(string.format("RESOLUTION_SHOW | %s | scenario=%s | winner=%s | tm1=%s | tm2=%s",
-    plan.itemDisplayName or "?", plan.scenario,
-    (plan.winner and plan.winner.name) or "none",
-    plan.tm1 or "none", plan.tm2 or "none"))
-end
-
-function sepgp:HideResolutionWindow()
-  -- 2026-04-07 v4.23 REGRESSION FIX: Cancel button and Close X button used
-  -- to bypass addOrUpdateLoot entirely, so dismissed items never appeared
-  -- in the loot tracker (sepgp_loot, opened via Shift+click on the EPGP
-  -- icon). The legacy SHOOTY_EPGP_AUTO_GEARPOINTS popup (v1.0.0 - v4.0.2)
-  -- had no Cancel/X buttons; every dismissal path went through OnCancel
-  -- which recorded the loot as "Unassigned" via addOrUpdateLoot. The new
-  -- Resolution Window introduced these dismiss buttons without porting
-  -- that recording behavior. Officers were confused when their shift-click
-  -- loot history came up blank.
-  --
-  -- FIX: If the window is being hidden BEFORE the item was charged
-  -- (data._gp_charged is not true), record the item as Unassigned so it
-  -- still shows up in the loot tracker. If _gp_charged is already true
-  -- (Confirm/Remind Later already ran addOrUpdateLoot), skip this to
-  -- prevent a duplicate entry.
-  local pendingData = sepgp_resolution_data
-  if pendingData and not pendingData._gp_charged then
-    pendingData[self.loot_index.action] = self.VARS.reminder
-    pendingData._gp_charged = true  -- prevent duplicate via subsequent path
-    local update = pendingData[self.loot_index.update] ~= nil
-    self:addOrUpdateLoot(pendingData, update)
-    self:writeDebugLog(string.format("RESOLUTION_HIDE_RECORDED | %s | recorded as Unassigned (Cancel/X dismissal)",
-      pendingData[self.loot_index.item] or "?"))
-    sepgp_loot:Refresh()
-  end
-
-  if sepgp_resolution_window and sepgp_resolution_window:IsShown() then
-    sepgp_resolution_window:Hide()
-  end
-  -- Clear stored refs so a stale plan doesn't leak into next popup
-  sepgp_resolution_data = nil
-  sepgp_resolution_plan = nil
-  -- 2026-04-06 v4.21 BUGFIX: Always advance the loot queue when the window
-  -- is dismissed, regardless of which button the user clicked. Previously
-  -- only Confirm and Remind Later advanced the queue, while Cancel and the
-  -- X close button did NOT, leaving _lootQueueActive stuck at true. After
-  -- one Cancel/X click during a raid, every subsequent loot drop was
-  -- silently swallowed because queueLootPopup() guards on _lootQueueActive.
-  -- Result: officers saw "no prompt for loot" and no [EPGP-AUDIT] messages
-  -- were posted to officer chat. Calling advanceLootQueue here is safe for
-  -- all paths because Confirm/Remind Later set _lootQueueActive=false BEFORE
-  -- calling Hide, so the second advance is a no-op.
-  self:advanceLootQueue()
+  self:ResolveLootConfirm()
 end
 
 -- Execute the resolution: GP charge, winner announce, raid/officer chat,
--- advance queue. Uses the stored plan from ShowResolutionWindow.
+-- advance queue. Uses the plan AutoResolveLoot just computed.
 function sepgp:ResolveLootConfirm()
   local data = sepgp_resolution_data
   local plan = sepgp_resolution_plan
@@ -3962,6 +3832,21 @@ function sepgp:ResolveLootConfirm()
   if data._gp_charged then
     self:defaultPrint("This item has already been resolved.")
     return
+  end
+
+  -- No name was clicked to get here -- fill in the loot-history "Looter"
+  -- fields from the plan's real winner (or TM mule / DE player / self as
+  -- last resort) so the history entry still shows someone sensible.
+  if not data[self.loot_index.player] or data[self.loot_index.player] == "" then
+    local looter = (plan.winner and plan.winner.name) or plan.tm1 or plan.dePlayer or self._playerName
+    local class = self:resolveLooterClass(looter)
+    local color = "|cffFFFFFF" .. looter .. "|r"
+    if class then
+      local BC = AceLibrary("Babble-Class-2.2")
+      color = "|c" .. (BC and BC:GetHexColor(class) or "ffFFFFFF") .. looter .. "|r"
+    end
+    data[self.loot_index.player] = looter
+    data[self.loot_index.player_c] = color
   end
 
   local itemDisplayName = plan.itemDisplayName
@@ -3991,8 +3876,11 @@ function sepgp:ResolveLootConfirm()
     self:givename_gp(winnerName, gpCost, itemDisplayName, specTypeFull, routeInfo)
     data._gp_charged = true
 
-    -- Announce winner to /raid
-    self:announceWinner(winnerName, specTypeFull, itemDisplayName)
+    -- Announce winner to /raid. Use plan.itemLink (the real |Hitem:..|h
+    -- hyperlink) here, not itemDisplayName -- extractItemName() strips the
+    -- |H..|h markup along with keeping the color, so itemDisplayName is
+    -- colored text but not an actual clickable/hoverable item link.
+    self:announceWinner(winnerName, specTypeFull, plan.itemLink or itemDisplayName)
 
     -- Trade instruction if TM mule is involved
     if plan.tm1 then
@@ -4094,38 +3982,10 @@ function sepgp:ResolveLootConfirm()
   self:writeDebugLog(string.format("RESOLUTION_CONFIRM_INSERTED | %s | sepgp_looted size after=%d",
     data[self.loot_index.item] or "?",
     table.getn(sepgp_looted or {})))
-  self:HideResolutionWindow()
   sepgp_resolution_data = nil
   sepgp_resolution_plan = nil
   self:advanceLootQueue()
   sepgp_loot:Refresh()
-end
-
--- Remind later: mark as unassigned, keep item in loot tracker, advance queue.
-function sepgp:ResolveLootRemindLater()
-  local data = sepgp_resolution_data
-  if not data then return end
-  if self:IsEventScheduled("shootyepgpBidTimeout") then
-    self:CancelScheduledEvent("shootyepgpBidTimeout")
-  end
-  running_bid = false
-  data[self.loot_index.action] = self.VARS.reminder
-  -- 2026-04-07 v4.23: mark as charged so HideResolutionWindow does not
-  -- record a duplicate entry. We use _gp_charged as a "this item has
-  -- already been written to sepgp_looted" flag, even though no GP was
-  -- actually charged in the Remind Later path.
-  data._gp_charged = true
-  local update = data[self.loot_index.update] ~= nil
-  self:writeDebugLog(string.format("RESOLUTION_REMIND_LATER_INSERT | %s | sepgp_looted size before=%d",
-    data[self.loot_index.item] or "?", table.getn(sepgp_looted or {})))
-  self:addOrUpdateLoot(data, update)
-  self:writeDebugLog(string.format("RESOLUTION_REMIND_LATER_INSERTED | %s | sepgp_looted size after=%d",
-    data[self.loot_index.item] or "?", table.getn(sepgp_looted or {})))
-  sepgp_loot:Refresh()
-  self:HideResolutionWindow()
-  sepgp_resolution_data = nil
-  sepgp_resolution_plan = nil
-  self:advanceLootQueue()
 end
 
 ----------------
@@ -4402,8 +4262,8 @@ function sepgp:showNextLootPopup()
   table.remove(self._lootQueue, 1)
   self._lootQueueActive = true
   self:writeDebugLog(string.format("QUEUE_SHOW | %s | %s | remaining=%d", data[self.loot_index.player], data[self.loot_index.item] or "?", table.getn(self._lootQueue)))
-  -- Phase 3: Use custom Resolution Window instead of StaticPopup + dropdown.
-  -- Fall back to StaticPopup if the resolution window fails for any reason.
+  -- Phase 4: Auto-resolve immediately, no popup. Fall back to the legacy
+  -- StaticPopup only if that compatibility flag is explicitly set.
   if sepgp_useLegacyPopup then
     local dialog = StaticPopup_Show("SHOOTY_EPGP_AUTO_GEARPOINTS", data[self.loot_index.player_c], data[self.loot_index.item], data)
     if dialog then
@@ -4411,14 +4271,13 @@ function sepgp:showNextLootPopup()
       sepgp:setupPopupTooltip(dialog)
     end
   else
-    self:ShowResolutionWindow(data)
+    self:AutoResolveLoot(data)
   end
 end
 
--- Called after any popup action (MS/OS/TM/DE) to advance the queue
--- 2026-04-06 v4.21: Made idempotent. HideResolutionWindow now also calls
--- this, so ResolveLootConfirm/RemindLater would otherwise double-schedule.
--- Cancel any existing pending schedule before scheduling a new one.
+-- Called after any resolution (auto or legacy popup) to advance the queue.
+-- Idempotent -- cancels any existing pending schedule before scheduling a
+-- new one, so calling it more than once for the same item is harmless.
 function sepgp:advanceLootQueue()
   self._lootQueueActive = false
   if self:IsEventScheduled("sepgpLootQueueNext") then
@@ -4719,8 +4578,10 @@ local sepgp_auto_gp_menu = {
       if sepgp:IsEventScheduled("shootyepgpBidTimeout") then
         sepgp:CancelScheduledEvent("shootyepgpBidTimeout")
       end
-      -- Announce winner to /raid with item name from popup data
-      sepgp:announceWinner(actual_name, "MS", itemDisplayName)
+      -- Announce winner to /raid with the real item link (clickable/hoverable),
+      -- not itemDisplayName -- extractItemName() strips the |H..|h hyperlink
+      -- markup, leaving colored text that isn't an actual item link.
+      sepgp:announceWinner(actual_name, "MS", itemLink)
       -- Clear bids without re-announcing (bids resolved)
       sepgp:clearBidsQuiet()
       sepgp:refreshPRTablets()
@@ -4768,8 +4629,10 @@ local sepgp_auto_gp_menu = {
       if sepgp:IsEventScheduled("shootyepgpBidTimeout") then
         sepgp:CancelScheduledEvent("shootyepgpBidTimeout")
       end
-      -- Announce winner to /raid with item name from popup data
-      sepgp:announceWinner(actual_name, "OS", itemDisplayName)
+      -- Announce winner to /raid with the real item link (clickable/hoverable),
+      -- not itemDisplayName -- extractItemName() strips the |H..|h hyperlink
+      -- markup, leaving colored text that isn't an actual item link.
+      sepgp:announceWinner(actual_name, "OS", itemLink)
       -- Clear bids without re-announcing (bids resolved)
       sepgp:clearBidsQuiet()
       sepgp:refreshPRTablets()
@@ -4823,7 +4686,10 @@ local sepgp_auto_gp_menu = {
         local routeInfo = string.format("TM: %s - Route: %s(TM) -> %s(%s)", tm_holder, tm_holder, real_winner, spec_type)
         sepgp:givename_gp(real_winner, gp_cost, itemDisplayName, spec_type, routeInfo)
         data._gp_charged = true
-        sepgp:announceWinner(real_winner, spec_type, itemDisplayName)
+        -- Announce with the real item link (clickable/hoverable), not
+        -- itemDisplayName -- extractItemName() strips the |H..|h hyperlink
+        -- markup, leaving colored text that isn't an actual item link.
+        sepgp:announceWinner(real_winner, spec_type, itemLink)
         -- Use dash instead of pipe to avoid ChatThrottleLib "invalid escape code" from aux-addons
         SendChatMessage(string.format("[EPGP] Transmog: %s - Trade to %s (%s, %d GP) within 10 min", tm_holder, real_winner, spec_type, gp_cost), "RAID")
         sepgp:writeDebugLog(string.format("TM_RAID_MSG | holder=%s winner=%s spec=%s gp=%d", tm_holder, real_winner, spec_type, gp_cost))
@@ -5029,5 +4895,5 @@ function sepgp:EasyMenu(menuList, menuFrame, anchor, x, y, displayMode, level)
   ToggleDropDownMenu(1, nil, menuFrame, anchor, x, y)
 end
 
--- GLOBALS: sepgp_saychannel,sepgp_groupbyclass,sepgp_groupbyarmor,sepgp_groupbyrole,sepgp_raidonly,sepgp_decay,sepgp_minep,sepgp_reservechannel,sepgp_main,sepgp_progress,sepgp_discount,sepgp_altspool,sepgp_altpercent,sepgp_log,sepgp_dbver,sepgp_looted,sepgp_debug,sepgp_fubar
+-- GLOBALS: sepgp_saychannel,sepgp_groupbyclass,sepgp_groupbyarmor,sepgp_groupbyrole,sepgp_raidonly,sepgp_decay,sepgp_minep,sepgp_bidtimer,sepgp_reservechannel,sepgp_main,sepgp_progress,sepgp_discount,sepgp_altspool,sepgp_altpercent,sepgp_log,sepgp_dbver,sepgp_looted,sepgp_debug,sepgp_fubar
 -- GLOBALS: sepgp,sepgp_prices,sepgp_standings,sepgp_bids,sepgp_loot,sepgp_reserves,sepgp_alts,sepgp_logs
