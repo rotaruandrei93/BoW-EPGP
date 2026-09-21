@@ -1421,8 +1421,12 @@ function sepgp:get_ep_v3(getname,officernote) -- gets ep by name or note
   end
   for i = 1, GetNumGuildMembers(1) do
     local name, _, _, _, class, _, note, officernote, _, _ = GetGuildRosterInfo(i)
-    local _,_,ep = string.find(officernote,".*{(%d+):%d+}.*")
-    if (name==getname) then return tonumber(ep) end
+    if officernote then
+      local _,_,ep = string.find(officernote,".*{(%d+):%d+}.*")
+      if (name==getname) then return tonumber(ep) end
+    elseif (name==getname) then
+      return nil
+    end
   end
   return
 end
@@ -1446,8 +1450,12 @@ function sepgp:get_gp_v3(getname,officernote) -- gets gp by name or officernote
   end
   for i = 1, GetNumGuildMembers(1) do
     local name, _, _, _, class, _, note, officernote, _, _ = GetGuildRosterInfo(i)
-    local _,_,gp = string.find(officernote,".*{%d+:(%d+)}.*")
-    if (name==getname) then return tonumber(gp) end
+    if officernote then
+      local _,_,gp = string.find(officernote,".*{%d+:(%d+)}.*")
+      if (name==getname) then return tonumber(gp) end
+    elseif (name==getname) then
+      return nil
+    end
   end
   return
 end
