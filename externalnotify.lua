@@ -19,6 +19,7 @@
 --
 -- Command:  /sepgpstanding  open the standings window and refresh it
 
+local VERSION        = "5"         -- shown by /sepgpstanding so you can check every copy matches
 local CHANNEL        = "BoWEPGPSync"
 local MARK           = "SEPGPX;"
 local GUILD_NAME     = "Blades of Wrynn"
@@ -145,20 +146,25 @@ end
 
 ------------------------------------------------------------------ view hooks (used by standings.lua)
 
+local function hasSnapshot()
+  local s = sepgp_external_snapshot
+  return s ~= nil and s.rows ~= nil and table.getn(s.rows) > 0
+end
+
 function ext:IsActive()
   if not notBoW() then return false end
-  return (sepgp_external_snapshot ~= nil and sepgp_external_snapshot.rows ~= nil) or (cur ~= nil)
+  return hasSnapshot() or (cur ~= nil)
 end
 
 function ext:Rows()
-  if sepgp_external_snapshot and sepgp_external_snapshot.rows then
+  if hasSnapshot() then
     return sepgp_external_snapshot.rows
   end
   return {}
 end
 
 function ext:StatusText()
-  local s = sepgp_external_snapshot
+  local s = hasSnapshot() and sepgp_external_snapshot or nil
   if cur then
     if s and s.ts then
       return string.format("Updating from Blades of Wrynn... (showing list from %s)", ageText(s.ts))
@@ -217,7 +223,7 @@ local function startRequest(manual)
     if manual then cur.manual = true end
     return
   end
-  local s = sepgp_external_snapshot
+  local s = hasSnapshot() and sepgp_external_snapshot or nil
   if (not manual) and s and s.got and (time() - s.got) < AUTO_MIN_AGE then return end
   local req = {id = tostring(math.random(100000, 999999)), manual = manual,
                offers = {}, offerIdx = 0, picking = false, chunks = {}, got = 0, done = false}
@@ -242,7 +248,7 @@ local function commit(req, sender)
   local rows = {}
   for seq = 1, req.total do
     local chunk = req.chunks[seq] or ""
-    for row in string.gfind(chunk, "([^,]+)") do
+    for row in string.gfind(chunk, "([^,|]+)") do
       local _, _, n, c, ep, gp, x = string.find(row, "^([^:]+):([^:]+):(%d+):(%d+):([^:]*)$")
       if n then
         if x == "-" or x == "" then x = nil end
@@ -251,6 +257,13 @@ local function commit(req, sender)
     end
   end
   req.done = true
+  if table.getn(rows) == 0 then
+    -- never replace a good saved list with an unreadable one
+    local sample = string.gsub(string.sub(req.chunks[1] or "", 1, 70), "|", "/")
+    say(string.format("%s sent a list I could not read (%d chunk(s)). Sample: %s - is their addon up to date?", sender, req.total, sample))
+    finish(req)
+    return
+  end
   sepgp_external_snapshot = {rows = rows, ts = time(), got = time(), src = sender}
   if req.manual then
     say(string.format("Standings updated (%d entries, via %s).", table.getn(rows), sender))
@@ -397,6 +410,7 @@ SlashCmdList["SEPGPSTANDING"] = function()
     say("You are in Blades of Wrynn - use the normal standings window.")
     return
   end
+  say(string.format("externalnotify v%s", VERSION))
   sepgp_standings:Toggle(true)
   startRequest(true)
 end
