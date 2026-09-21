@@ -316,6 +316,7 @@ function sepgp_standings:Toggle(forceShow)
       T:ToggleLocked("sepgp_standings")
     end
     self:setHideScript()
+    if sepgp.extRemote then sepgp.extRemote:OnOpen() end
   else
     if (forceShow) then
       sepgp_standings:Refresh()
@@ -378,8 +379,18 @@ function sepgp_standings:BuildStandingsTable()
     end
   end
   sepgp.alts = {}
+  -- External mains (not in Blades of Wrynn): use the list relayed by a guild member
+  local remote = sepgp.extRemote and sepgp.extRemote:IsActive() and sepgp.extRemote:Rows()
+  if remote then
+    for i = 1, table.getn(remote) do
+      local rw = remote[i]
+      if (not sepgp_raidonly) or (not next(r)) or r[rw[1]] then
+        table.insert(t,{rw[1],rw[2],self:getArmorClass(rw[2]),rw[3],rw[4],rw[3]/rw[4],rw[5]})
+      end
+    end
+  end
   sepgp:buildExternalMainsTable()
-  for i = 1, GetNumGuildMembers(1) do
+  for i = 1, (remote and 0 or GetNumGuildMembers(1)) do
     local name, _, _, _, class, _, note, officernote, _, _ = GetGuildRosterInfo(i)
     local ep = (sepgp:get_ep_v3(name,officernote) or 0) 
     local gp = (sepgp:get_gp_v3(name,officernote) or sepgp.VARS.basegp)
@@ -438,6 +449,14 @@ function sepgp_standings:OnTooltipUpdate()
       "text4", C:Orange(L["pr"]),     "child_text4R",   1, "child_text4G",   1, "child_text4B",   0, "child_justify4", "RIGHT"
     )
   local t = self:BuildStandingsTable()
+  if sepgp.extRemote and sepgp.extRemote:IsActive() then
+    cat:AddLine(
+      "text", C:Colorize("999999", sepgp.extRemote:StatusText()),
+      "text2", "",
+      "text3", "",
+      "text4", ""
+    )
+  end
   local separator
   for i = 1, table.getn(t) do
     local name, class, armor_class, ep, gp, pr, ext_name = unpack(t[i])
@@ -484,7 +503,7 @@ function sepgp_standings:OnTooltipUpdate()
       text4 = string.format("%.4g", pr)
     end
     local text3 = string.format("%.4g", gp)    
-    if ((sepgp._playerName) and sepgp._playerName == name) or ((sepgp_main) and sepgp_main == name) then
+    if ((sepgp._playerName) and sepgp._playerName == name) or ((sepgp_main) and sepgp_main == name) or (ext_name and sepgp._playerName == ext_name) then
       text = string.format("(*)%s",text)
       local pr_decay = sepgp:capcalc(ep,gp)
       if pr_decay < 0 then
