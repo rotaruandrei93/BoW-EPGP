@@ -1150,18 +1150,45 @@ function sepgp:addonMessage(message,channel,sender)
   SendAddonMessage(self.VARS.prefix,message,channel,sender)
 end
 
-function sepgp:addonComms(prefix,message,channel,sender)
-  if not prefix == self.VARS.prefix then return end -- we don't care for messages from other addons
-  if sender == self._playerName then return end -- we don't care for messages from ourselves
-  local name_g,class,rank = self:verifyGuildMember(sender,true)
-  if not (name_g) then return end -- only accept messages from guild members
+-- Bid sync (BID;...) is sent by the master looter / raid leader on the RAID
+-- addon channel. Raiders from OTHER guilds (external mains) can't find that
+-- sender in THEIR guild roster, so the plain guild check used to drop every
+-- bid message and their bid window never opened. Accept the sender if they
+-- are a guild member (old behaviour) OR hold authority in our raid: raid
+-- leader, assistant, or the current master looter.
+function sepgp:isBidSyncSender(sender)
+  if not sender or sender == "" then return false end
+  if self:verifyGuildMember(sender,true) then return true end
+  for i=1,GetNumRaidMembers() do
+    local name, rank = GetRaidRosterInfo(i)
+    if name == sender then
+      if rank and rank >= 1 then return true end -- 2 = leader, 1 = assistant
+      break
+    end
+  end
+  local method, partyID, raidID = GetLootMethod()
+  if method == "master" and raidID and raidID > 0 then
+    if UnitName("raid"..raidID) == sender then return true end
+  end
+  return false
+end
 
-  -- Feature 1: Handle bid sync messages from master looter
+function sepgp:addonComms(prefix,message,channel,sender)
+  if prefix ~= self.VARS.prefix then return end -- we don't care for messages from other addons
+  if sender == self._playerName then return end -- we don't care for messages from ourselves
+
+  -- Feature 1: Handle bid sync messages from master looter (guild OR raid authority,
+  -- so external-guild raiders get the bid window too)
   local bid_prefix = string.sub(message, 1, 4)
   if bid_prefix == "BID;" then
-    self:handleBidSync(message, sender)
+    if self:isBidSyncSender(sender) then
+      self:handleBidSync(message, sender)
+    end
     return
   end
+
+  local name_g,class,rank = self:verifyGuildMember(sender,true)
+  if not (name_g) then return end -- all other addon messages: guild members only
 
   local who,what,amount
   for name,epgp,change in string.gfind(message,"([^;]+);([^;]+);([^;]+)") do
@@ -2098,13 +2125,10 @@ function sepgp:captureLootCall(text, sender)
           local item_display = sepgp.bid_item.linkFull or sepgp.bid_item.name or "Unknown"
           gp_cost = gp_cost or "?"
           SendChatMessage(string.format("[EPGP] Bids open: %s (GP: %s) - Whisper me MS, FLEX, OS, or TM to bid!", item_display, tostring(gp_cost)), "RAID_WARNING")
-          -- Stagger messages 2 and 3 to avoid WoW server-side chat throttle
+          -- Stagger message 2 to avoid WoW server-side chat throttle
           self:ScheduleEvent("shootyepgpBidMsg2", function()
             SendChatMessage("[EPGP] MS = Main Spec, FLEX = MS but willing to pass, OS = Off Spec, TM = Transmog (0 GP), PASS = withdraw current bid", "RAID")
           end, 1.5)
-          self:ScheduleEvent("shootyepgpBidMsg3", function()
-            SendChatMessage("[EPGP] Priority: MS > FLEX > OS > TM. TM is random roll, 0 GP. PASS allows you to withdraw your current bid if you change your mind.", "RAID")
-          end, 3)
           -- Feature 1: Broadcast bid item and clear to raid
           self:addonMessage("BID;CLEAR;0", "RAID")
           -- Send item link info with ML name, GP cost, display name, and full link
@@ -2263,6 +2287,15 @@ function sepgp:captureBid(text, sender)
   end
 end
 
+-- Tell every raider's client to close the bid popup. Only the client that
+-- ran the bid (master looter / raid leader) broadcasts; receivers handle
+-- BID;CLEAR in handleBidSync (HideBidPopup + wipe local bid state).
+function sepgp:broadcastBidClear()
+  if GetNumRaidMembers() > 0 and (IsRaidLeader() or self:lootMaster()) then
+    self:addonMessage("BID;CLEAR;0", "RAID")
+  end
+end
+
 function sepgp:clearBids(reset)
   if reset~=nil then
     self:debugPrint(L["Clearing old Bids"])
@@ -2288,6 +2321,7 @@ function sepgp:clearBids(reset)
   sepgp_bids._counterText = ""
   self:UpdateBidPopupList()
   self:HideBidPopup()
+  self:broadcastBidClear()
 end
 
 -- /sepgp bids: local-only status printout for the ML. The old bids window
@@ -2462,7 +2496,9 @@ end
 -- Winner announcement (single player to /raid)
 ----------------------------------------------
 -- Phase 1 fix: itemDisplayName parameter replaces bid_item global lookup.
-function sepgp:announceWinner(playerName, specType, itemDisplayName)
+-- gpCharged (optional): the GP just awarded/charged for this item; when given,
+-- it is shown in the raid announcement.
+function sepgp:announceWinner(playerName, specType, itemDisplayName, gpCharged)
   if not UnitInRaid("player") then return end
   local ep = self:get_ep_v3(playerName) or 0
   local gp = self:get_gp_v3(playerName) or sepgp.VARS.basegp
@@ -2483,9 +2519,14 @@ function sepgp:announceWinner(playerName, specType, itemDisplayName)
   -- so the item shows highlighted in raid chat just like the TRADE ALERT
   -- and bid-open messages do -- previously this stripped the color codes
   -- right before sending, so only this message came out plain.
-  local msg = string.format("[EPGP] %s won%s (%s) - PR: %.2f (EP: %d / GP: %d)", playerName, itemName, specType, pr, ep, gp)
+  local gpText = ""
+  local gpNum = tonumber(gpCharged)
+  if gpNum then
+    gpText = string.format(" - Awarded %d GP", gpNum)
+  end
+  local msg = string.format("[EPGP] %s won%s (%s)%s - PR: %.2f (EP: %d / GP: %d)", playerName, itemName, specType, gpText, pr, ep, gp)
   SendChatMessage(msg, "RAID")
-  sepgp:writeDebugLog(string.format("ANNOUNCE | %s won%s (%s) PR=%.2f", playerName, itemName, specType, pr))
+  sepgp:writeDebugLog(string.format("ANNOUNCE | %s won%s (%s) GP=%s PR=%.2f", playerName, itemName, specType, tostring(gpNum), pr))
 end
 
 -- Clear bids without announcing results (used after GP is awarded and winner announced)
@@ -2506,6 +2547,7 @@ function sepgp:clearBidsQuiet()
   running_bid = false
   sepgp_bids._counterText = ""
   self:HideBidPopup()
+  self:broadcastBidClear()
 end
 
 ----------------------------------------------
@@ -2530,7 +2572,9 @@ function sepgp:CreateBidPopup()
   local f = CreateFrame("Frame", "SepgpBidPopup", UIParent)
   f:SetWidth(280)
   f:SetHeight(sepgp.BID_POPUP_MIN_H_EXPANDED)
-  f:SetPoint("TOP", UIParent, "TOP", 0, -120)
+  -- Moved down from -120 so it clears Blizzard's RaidWarningFrame /
+  -- countdown text near the top-center of the screen.
+  f:SetPoint("TOP", UIParent, "TOP", 0, -260)
   f:SetBackdrop({
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -2695,6 +2739,9 @@ function sepgp:LayoutBidPopup()
   local buttonsShown = f.buttonBar and f.buttonBar:IsShown()
   local listAnchorFrame, listAnchorOffset, listTopOffset
 
+  -- The divider now stays visible in both states (previously it was hidden
+  -- once the button bar collapsed after a bid) -- it just re-anchors to
+  -- whatever is currently the bottom-most header element.
   if buttonsShown then
     f.divider:ClearAllPoints()
     f.divider:SetPoint("TOP", f.buttonBar, "BOTTOM", 0, -GAP)
@@ -2704,20 +2751,24 @@ function sepgp:LayoutBidPopup()
     listTopOffset = sepgp.BID_POPUP_HEADER_H + GAP + sepgp.BID_POPUP_BUTTONBAR_H
       + GAP + sepgp.BID_POPUP_DIVIDER_H + GAP
   else
-    f.divider:Hide()
-    listAnchorFrame = f.statusBtn
+    f.divider:ClearAllPoints()
+    f.divider:SetPoint("TOP", f.statusBtn, "BOTTOM", 0, -GAP)
+    f.divider:Show()
+    listAnchorFrame = f.divider
     listAnchorOffset = -GAP
-    listTopOffset = sepgp.BID_POPUP_HEADER_H + GAP
+    listTopOffset = sepgp.BID_POPUP_HEADER_H + GAP + sepgp.BID_POPUP_DIVIDER_H + GAP
   end
 
   local y = 0
   for i = 1, rowCount do
     local fs = f.listRows[i]
     fs:ClearAllPoints()
+    -- Each row is a fixed-width container centered under the anchor, so the
+    -- whole table stays centered in the popup.
     if i == 1 then
-      fs:SetPoint("TOPLEFT", listAnchorFrame, "BOTTOMLEFT", 10, listAnchorOffset)
+      fs:SetPoint("TOP", listAnchorFrame, "BOTTOM", 0, listAnchorOffset)
     else
-      fs:SetPoint("TOPLEFT", f.listRows[i-1], "BOTTOMLEFT", 0, -2)
+      fs:SetPoint("TOP", f.listRows[i-1], "BOTTOM", 0, -2)
     end
     fs:Show()
   end
@@ -2738,18 +2789,18 @@ function sepgp:UpdateBidPopupList()
   local f = sepgp_bid_popup
   if not f then return end
 
+  -- One entry per bidder: {name, pr, spec}. Each value gets its own cell.
   local rows = {}
   local function addRows(list, spec, hasPR)
     for i = 1, table.getn(list) do
       local entry = list[i]
       local name, class = entry[1], entry[2]
       local coloredName = C:Colorize(BC:GetHexColor(class), name)
+      local prText = ""
       if hasPR then
-        local pr = entry[5] or 0
-        table.insert(rows, string.format("%s rolled  PR %.2f  |cffFFCC00%s|r", coloredName, pr, spec))
-      else
-        table.insert(rows, string.format("%s rolled  |cffFFCC00%s|r", coloredName, spec))
+        prText = string.format("PR %.2f", entry[5] or 0)
       end
+      table.insert(rows, {coloredName, prText, "|cffFFCC00" .. spec .. "|r"})
     end
   end
   addRows(sepgp.bids_main or {}, "MS", true)
@@ -2757,16 +2808,50 @@ function sepgp:UpdateBidPopupList()
   addRows(sepgp.bids_off or {}, "OS", true)
   addRows(sepgp.bids_tm or {}, "TM", false)
 
+  -- Column widths (cells are centered inside their column). Total = 240.
+  -- Must be EQUAL widths -- unequal columns (previously 110/80/50, then
+  -- 100/80/60) keep the whole block off-center even though each cell's
+  -- own text is centered inside it, because the column separators end up
+  -- unevenly spaced around the window's true center line.
+  local COL_NAME_W, COL_PR_W, COL_SPEC_W = 80, 80, 80
+
   local rowCount = table.getn(rows)
   for i = 1, rowCount do
-    local fs = f.listRows[i]
-    if not fs then
-      fs = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-      fs:SetWidth(240)
-      fs:SetJustifyH("LEFT")
-      f.listRows[i] = fs
+    local row = f.listRows[i]
+    if not row then
+      row = CreateFrame("Frame", nil, f)
+      row:SetWidth(COL_NAME_W + COL_PR_W + COL_SPEC_W)
+      row:SetHeight(12)
+      local function makeCell(xoff, width)
+        local cell = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        cell:SetWidth(width)
+        cell:SetHeight(12)
+        cell:SetJustifyH("CENTER")
+        cell:SetPoint("LEFT", row, "LEFT", xoff, 0)
+        return cell
+      end
+      row.nameCell = makeCell(0, COL_NAME_W)
+      row.prCell = makeCell(COL_NAME_W, COL_PR_W)
+      row.specCell = makeCell(COL_NAME_W + COL_PR_W, COL_SPEC_W)
+
+      -- Thin vertical separators between the Name/PR and PR/Spec columns,
+      -- same purple as the header divider.
+      local function makeColSep(xoff)
+        local sep = row:CreateTexture(nil, "ARTWORK")
+        sep:SetWidth(1)
+        sep:SetHeight(12)
+        sep:SetPoint("LEFT", row, "LEFT", xoff, 0)
+        sep:SetTexture(0.5, 0.3, 0.7, 0.6)
+        return sep
+      end
+      row.colSep1 = makeColSep(COL_NAME_W)
+      row.colSep2 = makeColSep(COL_NAME_W + COL_PR_W)
+
+      f.listRows[i] = row
     end
-    fs:SetText(rows[i])
+    row.nameCell:SetText(rows[i][1])
+    row.prCell:SetText(rows[i][2])
+    row.specCell:SetText(rows[i][3])
   end
   f.listRowCount = rowCount
 
@@ -2840,13 +2925,10 @@ function sepgp:startTestBid(gp_cost)
   self:debugPrint("TEST MODE: Capturing bids for 5min.")
   -- Send the 3 announcement messages
   SendChatMessage(string.format("[EPGP] TEST - Bids open: Test Epic Item (GP: %d) - Whisper me MS, FLEX, OS, or TM to bid!", cost), "RAID_WARNING")
-  -- Stagger messages 2 and 3 to avoid WoW server-side chat throttle
+  -- Stagger message 2 to avoid WoW server-side chat throttle
   self:ScheduleEvent("shootyepgpBidMsg2", function()
     SendChatMessage("[EPGP] MS = Main Spec, FLEX = MS but willing to pass, OS = Off Spec, TM = Transmog (0 GP), PASS = withdraw current bid", "RAID")
   end, 1.5)
-  self:ScheduleEvent("shootyepgpBidMsg3", function()
-    SendChatMessage("[EPGP] Priority: MS > FLEX > OS > TM. TM is random roll, 0 GP. PASS allows you to withdraw your current bid if you change your mind.", "RAID")
-  end, 3)
   self:addonMessage("BID;CLEAR;0", "RAID")
   self:addonMessage(string.format("BID;ITEM;test-item;%s;%d", self._playerName, cost), "RAID")
   -- Show popup locally for testing
@@ -3880,7 +3962,7 @@ function sepgp:ResolveLootConfirm()
     -- hyperlink) here, not itemDisplayName -- extractItemName() strips the
     -- |H..|h markup along with keeping the color, so itemDisplayName is
     -- colored text but not an actual clickable/hoverable item link.
-    self:announceWinner(winnerName, specTypeFull, plan.itemLink or itemDisplayName)
+    self:announceWinner(winnerName, specTypeFull, plan.itemLink or itemDisplayName, gpCost)
 
     -- Trade instruction if TM mule is involved
     if plan.tm1 then
@@ -4581,7 +4663,7 @@ local sepgp_auto_gp_menu = {
       -- Announce winner to /raid with the real item link (clickable/hoverable),
       -- not itemDisplayName -- extractItemName() strips the |H..|h hyperlink
       -- markup, leaving colored text that isn't an actual item link.
-      sepgp:announceWinner(actual_name, "MS", itemLink)
+      sepgp:announceWinner(actual_name, "MS", itemLink, price)
       -- Clear bids without re-announcing (bids resolved)
       sepgp:clearBidsQuiet()
       sepgp:refreshPRTablets()
@@ -4632,7 +4714,7 @@ local sepgp_auto_gp_menu = {
       -- Announce winner to /raid with the real item link (clickable/hoverable),
       -- not itemDisplayName -- extractItemName() strips the |H..|h hyperlink
       -- markup, leaving colored text that isn't an actual item link.
-      sepgp:announceWinner(actual_name, "OS", itemLink)
+      sepgp:announceWinner(actual_name, "OS", itemLink, off_price)
       -- Clear bids without re-announcing (bids resolved)
       sepgp:clearBidsQuiet()
       sepgp:refreshPRTablets()
@@ -4689,7 +4771,7 @@ local sepgp_auto_gp_menu = {
         -- Announce with the real item link (clickable/hoverable), not
         -- itemDisplayName -- extractItemName() strips the |H..|h hyperlink
         -- markup, leaving colored text that isn't an actual item link.
-        sepgp:announceWinner(real_winner, spec_type, itemLink)
+        sepgp:announceWinner(real_winner, spec_type, itemLink, gp_cost)
         -- Use dash instead of pipe to avoid ChatThrottleLib "invalid escape code" from aux-addons
         SendChatMessage(string.format("[EPGP] Transmog: %s - Trade to %s (%s, %d GP) within 10 min", tm_holder, real_winner, spec_type, gp_cost), "RAID")
         sepgp:writeDebugLog(string.format("TM_RAID_MSG | holder=%s winner=%s spec=%s gp=%d", tm_holder, real_winner, spec_type, gp_cost))
