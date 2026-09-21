@@ -136,7 +136,7 @@ Results will print here when done.]],
   ["You now have: %d EP %d GP |cffffff00%.03f|r|cffff7f00PR|r."] = true,
   ["Close to EPGP Cap. Next Decay will change your |cffff7f00PR|r by |cffff0000%.4g|r."] = true,
   ["|cffffff00Click|r to toggle Standings.%s \n|cffffff00Right-Click|r for Options."] = true,
-  [" \n|cffffff00Ctrl+Click|r to toggle Reserves. \n|cffffff00Alt+Click|r to toggle Bids. \n|cffffff00Shift+Click|r to toggle Loot. \n|cffffff00Ctrl+Alt+Click|r to toggle Alts. \n|cffffff00Ctrl+Shift+Click|r to toggle Logs."] = true,
+  [" \n|cffffff00Ctrl+Click|r to toggle Reserves. \n|cffffff00Shift+Click|r to toggle Loot. \n|cffffff00Ctrl+Alt+Click|r to toggle Alts. \n|cffffff00Ctrl+Shift+Click|r to toggle Logs."] = true,
   ["Account EPs to %s."] = true,
   ["Account GPs to %s."] = true,
   ["shootyepgp options"] = true,
@@ -341,7 +341,7 @@ L:RegisterTranslations("zhCN", function() return {
   ["You now have: %d EP %d GP |cffffff00%.03f|r|cffff7f00PR|r."] = "你现在有: %d EP %d GP |cffffff00%.03f|r|cffff7f00PR|r.",
   ["Close to EPGP Cap. Next Decay will change your |cffff7f00PR|r by |cffff0000%.4g|r."] = "下次递减会改变你的 |cffff7f00PR|r 从 |cffff0000%.4g|r.",
   ["|cffffff00Click|r to toggle Standings.%s \n|cffffff00Right-Click|r for Options."] = "|cffffff00点击|r 切换名单.%s \n|cffffff00右键|r 设置.",
-  [" \n|cffffff00Ctrl+Click|r to toggle Reserves. \n|cffffff00Alt+Click|r to toggle Bids. \n|cffffff00Shift+Click|r to toggle Loot. \n|cffffff00Ctrl+Alt+Click|r to toggle Alts. \n|cffffff00Ctrl+Shift+Click|r to toggle Logs."] = " \n|cffffff00Ctrl+点击|r 切换到替补队员. \n|cffffff00Alt+点击|r 切换到竞拍. \n|cffffff00Shift+点击|r 切换到拾取. \n|cffffff00Ctrl+Shift+点击|r 切换到日志.", -- needs update
+  [" \n|cffffff00Ctrl+Click|r to toggle Reserves. \n|cffffff00Shift+Click|r to toggle Loot. \n|cffffff00Ctrl+Alt+Click|r to toggle Alts. \n|cffffff00Ctrl+Shift+Click|r to toggle Logs."] = " \n|cffffff00Ctrl+点击|r 切换到替补队员. \n|cffffff00Shift+点击|r 切换到拾取. \n|cffffff00Ctrl+Shift+点击|r 切换到日志.", -- needs update
   ["Account EPs to %s."] = "记账 EP 到 %s.",
   ["Account GPs to %s."] = "记账 GP 到 %s.",
   ["shootyepgp options"] = "shootyepgp 设置",
