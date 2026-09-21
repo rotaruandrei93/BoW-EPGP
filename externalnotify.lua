@@ -242,7 +242,7 @@ local function commit(req, sender)
   local rows = {}
   for seq = 1, req.total do
     local chunk = req.chunks[seq] or ""
-    for row in string.gfind(chunk, "([^|]+)") do
+    for row in string.gfind(chunk, "([^,]+)") do
       local _, _, n, c, ep, gp, x = string.find(row, "^([^:]+):([^:]+):(%d+):(%d+):([^:]*)$")
       if n then
         if x == "-" or x == "" then x = nil end
@@ -284,7 +284,7 @@ local function serve(id)
       table.insert(chunks, buf)
       buf = ""
     end
-    if buf ~= "" then buf = buf .. "|" end
+    if buf ~= "" then buf = buf .. "," end
     buf = buf .. rows[i]
   end
   if buf ~= "" then table.insert(chunks, buf) end
