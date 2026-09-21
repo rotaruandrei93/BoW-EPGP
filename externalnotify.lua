@@ -19,7 +19,7 @@
 --
 -- Command:  /sepgpstanding  open the standings window and refresh it
 
-local VERSION        = "5"         -- shown by /sepgpstanding so you can check every copy matches
+local VERSION        = "6"         -- shown by /sepgpstanding so you can check every copy matches
 local CHANNEL        = "BoWEPGPSync"
 local MARK           = "SEPGPX;"
 local GUILD_NAME     = "Blades of Wrynn"
