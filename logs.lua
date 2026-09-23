@@ -11,7 +11,7 @@ function sepgp_logs:OnEnable()
   if not T:IsRegistered("sepgp_logs") then
     T:Register("sepgp_logs",
       "children", function()
-        T:SetTitle(L["shootyepgp logs"])
+        T:SetTitle(L["BoW-EPGP logs"])
         self:OnTooltipUpdate()
       end,
       "showTitleWhenDetached", true,
