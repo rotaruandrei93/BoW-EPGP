@@ -2,7 +2,7 @@ local C = AceLibrary("Crayon-2.0")
 
 sepgp_bids = sepgp:NewModule("sepgp_bids", "AceDB-2.0", "AceEvent-2.0")
 
--- REDESIGN: the bid window (the "shootyepgp bids" Tablet popup that only
+-- REDESIGN: the bid window (the "BoW-EPGP bids" Tablet popup that only
 -- the master looter could see) has been removed entirely. It was purely a
 -- display -- MS/FLEX/OS/TM bids were already broadcast to raid chat as they
 -- came in (widestAudience), the countdown ticks are already announced to
@@ -87,7 +87,7 @@ end
 
 -- REDESIGN (RollFor-style auto resolution): starting the countdown IS
 -- starting the roll -- when it hits 0, sepgp:AutoResolveLoot() (in
--- shootyepgp.lua) runs the exact same priority logic the old Resolution
+-- BoW-EPGP.lua) runs the exact same priority logic the old Resolution
 -- Window used (analyzeLootResolution: MS > FLEX > OS, TM mule
 -- routed/awarded first, DE fallback for unclaimed items), charges GP,
 -- announces to raid/officer chat, and records loot history -- with no
@@ -155,7 +155,7 @@ end
 
 -- Duration is configurable: /sepgp config -> "Bid Timer (seconds)",
 -- saved per-character as sepgp_bidtimer (defaults to sepgp.VARS.bidtimer).
--- Called automatically the moment bids open (see shootyepgp.lua) -- the ML
+-- Called automatically the moment bids open (see BoW-EPGP.lua) -- the ML
 -- no longer has to trigger this by hand.
 function sepgp_bids:bidCountdown()
   self:countdownFinish(true)
