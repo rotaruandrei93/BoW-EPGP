@@ -22,12 +22,12 @@ end
 -- 2026-04-02: v3 to v4 migration (no-op).
 -- WHY: Version 4.x has no DB schema changes vs 3.x. All changes are code-only
 --   (bid window GP removal, double-click guard, etc). But the migration code
---   at shootyepgp.lua:748 calls sepgp["v3tov4"](sepgp) when major_ver=4 and
+--   at BoW-EPGP.lua:748 calls sepgp["v3tov4"](sepgp) when major_ver=4 and
 --   sepgp_dbver=3. Without this function, guild leaders get a Lua error:
 --   "attempt to call field '?' (a nil value)" that cannot be dismissed.
 --   Affected: BookKeeper (WorldOfNerds account, guild master).
 function sepgp:v3tov4()
-  self:defaultPrint("ShootyEPGP: Updated to v4 storage format (no changes needed).")
+  self:defaultPrint("BoW-EPGP: Updated to v4 storage format (no changes needed).")
   sepgp_dbver = 4
 end
 
