@@ -11,7 +11,7 @@ function sepgp_loot:OnEnable()
   if not T:IsRegistered("sepgp_loot") then
     T:Register("sepgp_loot",
       "children", function()
-        T:SetTitle(L["shootyepgp loot info"])
+        T:SetTitle(L["BoW-EPGP loot info"])
         self:OnTooltipUpdate()
       end,
       "showTitleWhenDetached", true,
