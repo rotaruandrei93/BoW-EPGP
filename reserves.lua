@@ -11,7 +11,7 @@ function sepgp_reserves:OnEnable()
   if not T:IsRegistered("sepgp_reserves") then
     T:Register("sepgp_reserves",
       "children", function()
-        T:SetTitle(L["shootyepgp reserves"])
+        T:SetTitle(L["BoW-EPGP reserves"])
         self:OnTooltipUpdate()
       end,
       "showTitleWhenDetached", true,
