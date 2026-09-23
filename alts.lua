@@ -11,7 +11,7 @@ function sepgp_alts:OnEnable()
   if not T:IsRegistered("sepgp_alts") then
     T:Register("sepgp_alts",
       "children", function()
-        T:SetTitle(L["shootyepgp alts"])
+        T:SetTitle(L["BoW-EPGP alts"])
         self:OnTooltipUpdate()
       end,
       "showTitleWhenDetached", true,
