@@ -107,6 +107,16 @@ shooty_export.scroll:SetPoint('BOTTOMRIGHT', shooty_export, 'BOTTOMRIGHT', -30, 
 shooty_export.scroll:SetScrollChild(shooty_export.edit)
 sepgp:make_escable("shooty_exportframe","add")
 
+-- Re-skin with pfUI's border/button/scrollbar when pfUI is detected as
+-- enabled, instead of the default Blizzard tooltip look set up above.
+-- Registered (not just called once) because this frame is built at file
+-- load time, before we can be sure pfUI has already finished loading.
+sepgp_pfui.Register(shooty_export, function()
+  sepgp_pfui.SkinFrame(shooty_export)
+  sepgp_pfui.SkinButton(shooty_export.action)
+  sepgp_pfui.SkinScrollbar(_G["shooty_exportscrollScrollBar"])
+end)
+
 function sepgp_standings:Export()
   shooty_export.action:Hide()
   shooty_export.title:SetText(C:Gold(L["Ctrl-C to copy. Esc to close."]))
@@ -218,7 +228,7 @@ function sepgp_standings:OnEnable()
   if not T:IsRegistered("sepgp_standings") then
     T:Register("sepgp_standings",
       "children", function()
-        T:SetTitle(L["shootyepgp standings"])
+        T:SetTitle(L["BoW-EPGP standings"])
         self:OnTooltipUpdate()
       end,
   		"showTitleWhenDetached", true,
