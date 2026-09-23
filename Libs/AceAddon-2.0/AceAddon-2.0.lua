@@ -44,7 +44,7 @@ if GetLocale() == "deDE" then
 		["Buffs"] = "Buffs",
 		["Chat/Communication"] = "Chat/Kommunikation",
 		["Druid"] = "Druide",
-		["Hunter"] = "J�ger",
+		["Hunter"] = "Jäger",
 		["Mage"] = "Magier",
 		["Paladin"] = "Paladin",
 		["Priest"] = "Priester",
@@ -124,106 +124,106 @@ elseif GetLocale() == "frFR" then
 		["UnitFrame"] = "Fen\195\170tres d'unit\195\169",
 	}
 elseif GetLocale() == "koKR" then
-	STANDBY = "|cffff5050(사용가능)|r"
+	STANDBY = "|cffff5050(ì¬ì©ê°ë¥)|r"
 	
-	TITLE = "제목"
-	NOTES = "노트"
-	VERSION = "버전"
-	AUTHOR = "저작자"
-	DATE = "날짜"
-	CATEGORY = "분류"
+	TITLE = "ì ëª©"
+	NOTES = "ë¸í¸"
+	VERSION = "ë²ì "
+	AUTHOR = "ì ìì"
+	DATE = "ë ì§"
+	CATEGORY = "ë¶ë¥"
 	EMAIL = "E-mail"
-	WEBSITE = "웹사이트"
+	WEBSITE = "ì¹ì¬ì´í¸"
 	
-	ABOUT = "정보"
-	PRINT_ADDON_INFO = "애드온 정보 출력"
+	ABOUT = "ì ë³´"
+	PRINT_ADDON_INFO = "ì ëì¨ ì ë³´ ì¶ë ¥"
 	
 	CATEGORIES = {
-		["Action Bars"] = "액션바",
-		["Auction"] = "경매",
-		["Audio"] = "음향",
-		["Battlegrounds/PvP"] = "전장/PvP",
-		["Buffs"] = "버프",
-		["Chat/Communication"] = "대화/의사소통",
-		["Druid"] = "드루이드",
-		["Hunter"] = "사냥꾼",
-		["Mage"] = "마법사",
-		["Paladin"] = "성기사",
-		["Priest"] = "사제",
-		["Rogue"] = "도적",
-		["Shaman"] = "주술사",
-		["Warlock"] = "흑마법사",
-		["Warrior"] = "전사",
-		["Healer"] = "힐러",
-		["Tank"] = "탱커",
-		["Caster"] = "캐스터",
-		["Combat"] = "전투",
-		["Compilations"] = "복합",
-		["Data Export"] = "자료 출력",
-		["Development Tools"] = "개발 도구",
-		["Guild"] = "길드",
-		["Frame Modification"] = "구조 변경",
-		["Interface Enhancements"] = "인터페이스 강화",
-		["Inventory"] = "인벤토리",
-		["Library"] = "라이브러리",
-		["Map"] = "지도",
-		["Mail"] = "우편",
-		["Miscellaneous"] = "기타",
-		["Quest"] = "퀘스트",
-		["Raid"] = "공격대",
-		["Tradeskill"] = "전문기술",
-		["UnitFrame"] = "유닛 프레임",
+		["Action Bars"] = "ì¡ìë°",
+		["Auction"] = "ê²½ë§¤",
+		["Audio"] = "ìí¥",
+		["Battlegrounds/PvP"] = "ì ì¥/PvP",
+		["Buffs"] = "ë²í",
+		["Chat/Communication"] = "ëí/ìì¬ìíµ",
+		["Druid"] = "ëë£¨ì´ë",
+		["Hunter"] = "ì¬ë¥ê¾¼",
+		["Mage"] = "ë§ë²ì¬",
+		["Paladin"] = "ì±ê¸°ì¬",
+		["Priest"] = "ì¬ì ",
+		["Rogue"] = "ëì ",
+		["Shaman"] = "ì£¼ì ì¬",
+		["Warlock"] = "íë§ë²ì¬",
+		["Warrior"] = "ì ì¬",
+		["Healer"] = "íë¬",
+		["Tank"] = "í±ì»¤",
+		["Caster"] = "ìºì¤í°",
+		["Combat"] = "ì í¬",
+		["Compilations"] = "ë³µí©",
+		["Data Export"] = "ìë£ ì¶ë ¥",
+		["Development Tools"] = "ê°ë° ëêµ¬",
+		["Guild"] = "ê¸¸ë",
+		["Frame Modification"] = "êµ¬ì¡° ë³ê²½",
+		["Interface Enhancements"] = "ì¸í°íì´ì¤ ê°í",
+		["Inventory"] = "ì¸ë²¤í ë¦¬",
+		["Library"] = "ë¼ì´ë¸ë¬ë¦¬",
+		["Map"] = "ì§ë",
+		["Mail"] = "ì°í¸",
+		["Miscellaneous"] = "ê¸°í",
+		["Quest"] = "íì¤í¸",
+		["Raid"] = "ê³µê²©ë",
+		["Tradeskill"] = "ì ë¬¸ê¸°ì ",
+		["UnitFrame"] = "ì ë íë ì",
 	}
 elseif GetLocale() == "zhTW" then
-	STANDBY = "|cffff5050(待命)|r"
+	STANDBY = "|cffff5050(å¾å½)|r"
 	
-	TITLE = "標題"
-	NOTES = "註記"
-	VERSION = "版本"
-	AUTHOR = "作者"
-	DATE = "日期"
-	CATEGORY = "類別"
+	TITLE = "æ¨é¡"
+	NOTES = "è¨»è¨"
+	VERSION = "çæ¬"
+	AUTHOR = "ä½è"
+	DATE = "æ¥æ"
+	CATEGORY = "é¡å¥"
 	EMAIL = "E-mail"
-	WEBSITE = "網站"
+	WEBSITE = "ç¶²ç«"
 	
-	ABOUT = "關於"
-	PRINT_ADDON_INFO = "顯示插件資訊"
+	ABOUT = "éæ¼"
+	PRINT_ADDON_INFO = "é¡¯ç¤ºæä»¶è³è¨"
 	
 	CATEGORIES = {
-		["Action Bars"] = "動作列",
-		["Auction"] = "拍賣",
-		["Audio"] = "音樂",
-		["Battlegrounds/PvP"] = "戰場/PvP",
-		["Buffs"] = "增益",
-		["Chat/Communication"] = "聊天/通訊",
-		["Druid"] = "德魯伊",
-		["Hunter"] = "獵人",
-		["Mage"] = "法師",
-		["Paladin"] = "聖騎士",
-		["Priest"] = "牧師",
-		["Rogue"] = "盜賊",
-		["Shaman"] = "薩滿",
-		["Warlock"] = "術士",
-		["Warrior"] = "戰士",
-		["Healer"] = "治療者",
-		["Tank"] = "坦克",
-		["Caster"] = "施法者",
-		["Combat"] = "戰鬥",
-		["Compilations"] = "編輯",
-		["Data Export"] = "資料匯出",
-		["Development Tools"] = "開發工具",
-		["Guild"] = "公會",
-		["Frame Modification"] = "框架修改",
-		["Interface Enhancements"] = "介面增強",
-		["Inventory"] = "背包",
-		["Library"] = "資料庫",
-		["Map"] = "地圖",
-		["Mail"] = "郵件",
-		["Miscellaneous"] = "綜合",
-		["Quest"] = "任務",
-		["Raid"] = "團隊",
-		["Tradeskill"] = "商業技能",
-		["UnitFrame"] = "單位框架",
+		["Action Bars"] = "åä½å",
+		["Auction"] = "æè³£",
+		["Audio"] = "é³æ¨",
+		["Battlegrounds/PvP"] = "æ°å ´/PvP",
+		["Buffs"] = "å¢ç",
+		["Chat/Communication"] = "èå¤©/éè¨",
+		["Druid"] = "å¾·é­¯ä¼",
+		["Hunter"] = "çµäºº",
+		["Mage"] = "æ³å¸«",
+		["Paladin"] = "èé¨å£«",
+		["Priest"] = "ç§å¸«",
+		["Rogue"] = "çè³",
+		["Shaman"] = "è©æ»¿",
+		["Warlock"] = "è¡å£«",
+		["Warrior"] = "æ°å£«",
+		["Healer"] = "æ²»çè",
+		["Tank"] = "å¦å",
+		["Caster"] = "æ½æ³è",
+		["Combat"] = "æ°é¬¥",
+		["Compilations"] = "ç·¨è¼¯",
+		["Data Export"] = "è³æå¯åº",
+		["Development Tools"] = "éç¼å·¥å·",
+		["Guild"] = "å¬æ",
+		["Frame Modification"] = "æ¡æ¶ä¿®æ¹",
+		["Interface Enhancements"] = "ä»é¢å¢å¼·",
+		["Inventory"] = "èå",
+		["Library"] = "è³æåº«",
+		["Map"] = "å°å",
+		["Mail"] = "éµä»¶",
+		["Miscellaneous"] = "ç¶å",
+		["Quest"] = "ä»»å",
+		["Raid"] = "åé",
+		["Tradeskill"] = "åæ¥­æè½",
+		["UnitFrame"] = "å®ä½æ¡æ¶",
 	}
 elseif GetLocale() == "zhCN" then
 	STANDBY = "|cffff5050(\230\154\130\230\140\130)|r"
