@@ -7,7 +7,7 @@
 -- chat channel that Squire+ members and external mains join. Every message is
 -- tagged and filtered out of all chat windows, so nobody sees anything.
 --
--- When an external main opens the standings window (or types /sepgpstanding):
+-- When an external main opens the standings window (or types /bowepgpstanding):
 --   1. the addon joins the hidden channel and asks "who can serve me?" (XQ);
 --   2. every online member who is rank Squire or higher (can read officer notes)
 --      answers (XA) - but only if the asker is a registered external main
@@ -17,9 +17,9 @@
 --   4. the standings window is filled with that list and a copy is saved, so the
 --      window still shows the last known list when nobody qualified is online.
 --
--- Command:  /sepgpstanding  open the standings window and refresh it
+-- Command:  /bowepgpstanding  open the standings window and refresh it
 
-local VERSION        = "6"         -- shown by /sepgpstanding so you can check every copy matches
+local VERSION        = "7"         -- shown by /bowepgpstanding so you can check every copy matches
 local CHANNEL        = "BoWEPGPSync"
 local MARK           = "SEPGPX;"
 local GUILD_NAME     = "Blades of Wrynn"
@@ -404,7 +404,7 @@ function ext:OnOpen()
   startRequest(false)
 end
 
-SLASH_SEPGPSTANDING1 = "/sepgpstanding"
+SLASH_SEPGPSTANDING1 = "/bowepgpstanding"
 SlashCmdList["SEPGPSTANDING"] = function()
   local g = IsInGuild() and GetGuildInfo("player") or nil
   say(string.format("externalnotify v%s (guild: %s)", VERSION, IsInGuild() and (g or "not loaded yet") or "none"))
