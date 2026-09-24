@@ -156,7 +156,7 @@ local admincmd, membercmd = {type = "group", handler = sepgp, args = {
     test = {
       type = "text",
       name = "Test Bid",
-      desc = "Start a test bid cycle. Usage: /sepgp test [gp_cost]",
+      desc = "Start a test bid cycle. Usage: /bowepgp test [gp_cost]",
       get = function() return "" end,
       set = function(v) sepgp:startTestBid(v) end,
       usage = "<gp_cost>",
@@ -169,20 +169,20 @@ local admincmd, membercmd = {type = "group", handler = sepgp, args = {
       func = function() sepgp:endTestBid() end,
       order = 9,
     },
-    -- 2026-04-06 v4.22: production parity with /sepgp testend.
+    -- 2026-04-06 v4.22: production parity with /bowepgp testend.
     -- Officers can manually end real bids and force the resolution
     -- popup, instead of waiting for the loot capture chain to fire it.
     ["end"] = {
       type = "execute",
       name = "End Bid",
-      desc = "End the current bid cycle and force the resolution popup. Production version of /sepgp testend.",
+      desc = "End the current bid cycle and force the resolution popup. Production version of /bowepgp testend.",
       func = function() sepgp:endBidNow() end,
       order = 9,
     },
     testbid = {
       type = "text",
       name = "Inject Test Bid",
-      desc = "Inject a fake bid during test mode. Usage: /sepgp testbid ms FakeName or /sepgp testbid tm FakeName",
+      desc = "Inject a fake bid during test mode. Usage: /bowepgp testbid ms FakeName or /bowepgp testbid tm FakeName",
       get = function() return "" end,
       set = function(v) sepgp:injectTestBid(v) end,
       usage = "<keyword> <name>",
@@ -215,7 +215,7 @@ local admincmd, membercmd = {type = "group", handler = sepgp, args = {
     testitem = {
       type = "text",
       name = "Test with Item ID",
-      desc = "Start a test bid with a real item from prices.lua. Usage: /sepgp testitem 21682",
+      desc = "Start a test bid with a real item from prices.lua. Usage: /bowepgp testitem 21682",
       get = function() return "" end,
       set = function(v) sepgp:startTestWithItem(v) end,
       usage = "<itemId>",
@@ -842,7 +842,7 @@ function sepgp:delayedInit()
   end
   -- init options and comms
   self._options = self:buildMenu()
-  self:RegisterChatCommand({"/bowepgp","/sepgp","/shooty","/shootyepgp"},self.cmdtable())
+  self:RegisterChatCommand({"/bowepgp"},self.cmdtable())
   self:RegisterEvent("CHAT_MSG_ADDON","addonComms")  
   -- broadcast our version
   local addonMsg = string.format("VERSION;%s;%d",sepgp._versionString,major_ver)
@@ -2336,7 +2336,7 @@ function sepgp:clearBids(reset)
   self:broadcastBidClear()
 end
 
--- /sepgp bids: local-only status printout for the ML. The old bids window
+-- /bowepgp bids: local-only status printout for the ML. The old bids window
 -- showed this live in a Tablet frame; now everything below already gets
 -- broadcast to raid chat as it happens (bid announcements, countdown ticks,
 -- winner announcement), so this is just a manual "where do things stand
@@ -2721,7 +2721,8 @@ function sepgp:CreateBidPopup()
   local divider = f:CreateTexture(nil, "ARTWORK")
   divider:SetHeight(sepgp.BID_POPUP_DIVIDER_H)
   divider:SetWidth(260)
-  divider:SetTexture(0.5, 0.3, 0.7, 0.8)
+  -- Dark gray (same gray as the column separators in the list below).
+  divider:SetTexture(0.15, 0.15, 0.15, 1)
   f.divider = divider
 
   -- Live list of who has bid what so far, pulled from the same
@@ -2859,13 +2860,13 @@ function sepgp:UpdateBidPopupList()
       row.specCell = makeCell(COL_NAME_W + COL_PR_W, COL_SPEC_W)
 
       -- Thin vertical separators between the Name/PR and PR/Spec columns,
-      -- same purple as the header divider.
+      -- same dark gray as the header divider.
       local function makeColSep(xoff)
         local sep = row:CreateTexture(nil, "ARTWORK")
         sep:SetWidth(1)
         sep:SetHeight(12)
         sep:SetPoint("LEFT", row, "LEFT", xoff, 0)
-        sep:SetTexture(0.5, 0.3, 0.7, 0.6)
+        sep:SetTexture(0.15, 0.15, 0.15, 1)
         return sep
       end
       row.colSep1 = makeColSep(COL_NAME_W)
@@ -2924,7 +2925,7 @@ end
 -- Test Mode: Bid Testing
 --------------------------
 -- Test mode: simulates a loot drop for testing bid keywords
--- Usage: /sepgp test [gp_cost] -- starts a fake bid cycle
+-- Usage: /bowepgp test [gp_cost] -- starts a fake bid cycle
 function sepgp:startTestBid(gp_cost)
   if not UnitInRaid("player") then
     self:defaultPrint("Test mode requires being in a raid group.")
@@ -2959,12 +2960,12 @@ function sepgp:startTestBid(gp_cost)
   self:ShowBidPopup(nil, "|cffa335ee[Test Epic Item]|r", cost, self._playerName)
   -- Auto-start the countdown, same as a real bid opening.
   sepgp_bids:bidCountdown()
-  self:defaultPrint("Test bid started. Whisper MS, FLEX, OS, TM, or PASS to test. Use '/sepgp testend' to end.")
+  self:defaultPrint("Test bid started. Whisper MS, FLEX, OS, TM, or PASS to test. Use '/bowepgp testend' to end.")
 end
 
 -- 2026-04-06 v4.22: production parity with endTestBid. Officers can
 -- manually end the current bid cycle and force the resolution popup
--- with /sepgp end, instead of having to wait for the loot capture
+-- with /bowepgp end, instead of having to wait for the loot capture
 -- chain (CHAT_MSG_LOOT or GiveMasterLoot hook) to fire the popup.
 -- Mirrors endTestBid but reads bid_item from the real bid state
 -- rather than test_gp_cost.
@@ -3082,10 +3083,10 @@ function sepgp:endTestBid()
 end
 
 -- Inject a fake bid for test mode. Simulates another player bidding
--- without needing them in the raid. Usage: /sepgp testbid ms SomeName
+-- without needing them in the raid. Usage: /bowepgp testbid ms SomeName
 function sepgp:injectTestBid(input)
   if not running_bid then
-    self:defaultPrint("No test bid running. Start one with /sepgp test")
+    self:defaultPrint("No test bid running. Start one with /bowepgp test")
     return
   end
   -- Parse "keyword name" from input
@@ -3095,7 +3096,7 @@ function sepgp:injectTestBid(input)
     name = n
   end
   if not keyword or not name then
-    self:defaultPrint("Usage: /sepgp testbid ms PlayerName")
+    self:defaultPrint("Usage: /bowepgp testbid ms PlayerName")
     return
   end
   local bid = parseBidKeyword(keyword)
@@ -3146,7 +3147,7 @@ end
 -- Phase 4: Enhanced Test Mode
 ----------------------------------------------
 -- Test with a specific item ID from prices.lua.
--- Usage: /sepgp testitem 21682  (Bile-Covered Gauntlets)
+-- Usage: /bowepgp testitem 21682  (Bile-Covered Gauntlets)
 -- This creates a test bid with the real item name and GP cost.
 function sepgp:startTestWithItem(itemIdStr)
   if not UnitInRaid("player") then
@@ -3159,7 +3160,7 @@ function sepgp:startTestWithItem(itemIdStr)
   end
   local itemId = tonumber(itemIdStr)
   if not itemId then
-    self:defaultPrint("Usage: /sepgp testitem <itemId>  (e.g. /sepgp testitem 21682)")
+    self:defaultPrint("Usage: /bowepgp testitem <itemId>  (e.g. /bowepgp testitem 21682)")
     return
   end
   -- Look up price from prices.lua
@@ -3241,7 +3242,7 @@ function sepgp:startTestWithItem(itemIdStr)
   sepgp_bids:bidCountdown()
 
   self:defaultPrint(string.format("Test started: %s (ID: %d, GP: %d, OS: %d)", displayName, itemId, price, off_price))
-  self:defaultPrint("Use /sepgp testbid ms|os|tm <Name> to simulate bids, /sepgp testend to resolve.")
+  self:defaultPrint("Use /bowepgp testbid ms|os|tm <Name> to simulate bids, /bowepgp testend to resolve.")
   self:writeDebugLog(string.format("TEST_START | itemId=%d | %s | price=%d | os=%d", itemId, displayName, price, off_price))
 end
 
@@ -3564,9 +3565,9 @@ end
 
 -- DE Roster: tracks which raid members can disenchant.
 -- Stored in sepgp_de_roster SavedVariable (per-character).
--- Usage: /sepgp de add Fieldwalker
---        /sepgp de remove Fieldwalker
---        /sepgp de list
+-- Usage: /bowepgp de add Fieldwalker
+--        /bowepgp de remove Fieldwalker
+--        /bowepgp de list
 if not sepgp_de_roster then sepgp_de_roster = {} end
 
 -- Strip WoW color codes from a string for clean chat messages
