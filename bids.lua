@@ -1,4 +1,4 @@
-     local C = AceLibrary("Crayon-2.0")
+local C = AceLibrary("Crayon-2.0")
 
 sepgp_bids = sepgp:NewModule("sepgp_bids", "AceDB-2.0", "AceEvent-2.0")
 
@@ -17,7 +17,7 @@ sepgp_bids = sepgp:NewModule("sepgp_bids", "AceDB-2.0", "AceEvent-2.0")
 -- 2026-04-06: Now delegates to sepgp:rollTmWinners() for the actual roll.
 -- Previously this function had its own math.random calls separate from
 -- analyzeLootResolution, producing inconsistent TM winner names between
--- raid chat and officer chat for the same bid. Now bot h code paths share
+-- raid chat and officer chat for the same bid. Now both code paths share
 -- the same roll via the idempotent helper.
 function sepgp_bids:rollAndAnnounceTM(gpWinner)
   local tm_count = table.getn(sepgp.bids_tm)
@@ -153,7 +153,7 @@ function sepgp_bids:countdownFinish(reset)
   end
 end
 
--- Duration is configurable: /sepgp config -> "Bid Timer (seconds)",
+-- Duration is configurable: /bowepgp config -> "Bid Timer (seconds)",
 -- saved per-character as sepgp_bidtimer (defaults to sepgp.VARS.bidtimer).
 -- Called automatically the moment bids open (see BoW-EPGP.lua) -- the ML
 -- no longer has to trigger this by hand.
