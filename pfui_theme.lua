@@ -12,7 +12,7 @@
 --  * every function here is a safe no-op when pfUI isn't loaded/enabled
 --  * every pfUI API call is pcall-guarded, so a future pfUI update that
 --    renames/removes a helper can't break BoW-EPGP's own frames -- run
---    "/sepgppfui debug" to see any errors that were swallowed
+--    "/bowepgppfui debug" to see any errors that were swallowed
 --  * this file has no dependency on the `sepgp` global or on load
 --    order, so it can be loaded first in the .toc, before BoW-EPGP.lua
 --    even exists -- important because some BoW-EPGP frames are created
@@ -20,8 +20,8 @@
 --    loading, depending on alphabetical addon load order)
 --
 -- Global: sepgp_pfui
--- Slash:  /sepgppfui        -- status + forces a re-theme, reporting errors
---         /sepgppfui debug  -- toggles verbose logging of every skin call
+-- Slash:  /bowepgppfui        -- status + forces a re-theme, reporting errors
+--         /bowepgppfui debug  -- toggles verbose logging of every skin call
 -------------------------------------------------------------------------
 
 sepgp_pfui = sepgp_pfui or {}
@@ -220,20 +220,20 @@ poll:SetScript("OnUpdate", function()
 end)
 
 -- [ Slash command ]
--- /sepgppfui        prints detection status and forces an immediate
+-- /bowepgppfui        prints detection status and forces an immediate
 --                   re-theme, reporting any error from the last attempt
 --                   at each pfUI API call.
--- /sepgppfui debug  toggles verbose per-call logging.
--- /sepgppfui test   shows every registered window on screen for a visual
+-- /bowepgppfui debug  toggles verbose per-call logging.
+-- /bowepgppfui test   shows every registered window on screen for a visual
 --                   check, without needing a live bid/loot/export event.
 --                   Run it again to hide them.
--- /sepgppfui dewdrop  one-shot: reports right now, in chat, exactly what
+-- /bowepgppfui dewdrop  one-shot: reports right now, in chat, exactly what
 --                   state the Dewdrop-2.0 slider/edit-box popups are in
 --                   and whether skinning them just succeeded or failed --
 --                   no debug toggle, no timing a menu staying open.
 --                   (Defined in dewdrop_pfui_skin.lua; safe no-op here
 --                   if that file hasn't loaded for some reason.)
-SLASH_SEPGPPFUI1 = "/sepgppfui"
+SLASH_SEPGPPFUI1 = "/bowepgppfui"
 SlashCmdList["SEPGPPFUI"] = function(msg)
   msg = string.lower(msg or "")
   if msg == "debug" then
