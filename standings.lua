@@ -228,7 +228,7 @@ function sepgp_standings:OnEnable()
   if not T:IsRegistered("sepgp_standings") then
     T:Register("sepgp_standings",
       "children", function()
-        T:SetTitle(L["BoW-EPGP standings"])
+        T:SetTitle(L["BoW-EPGP Standings"])
         self:OnTooltipUpdate()
       end,
   		"showTitleWhenDetached", true,
@@ -451,12 +451,15 @@ function sepgp_standings:BuildStandingsTable()
 end
 
 function sepgp_standings:OnTooltipUpdate()
+  -- Every column (header row included) is centered; the vertical column
+  -- delimiters are drawn by updateColumnDelimiters() further down.
   local cat = T:AddCategory(
       "columns", 4,
-      "text",  C:Orange(L["Name"]),   "child_textR",    1, "child_textG",    1, "child_textB",    1, "child_justify",  "LEFT",
-      "text2", C:Orange(L["ep"]),     "child_text2R",   1, "child_text2G",   1, "child_text2B",   1, "child_justify2", "RIGHT",
-      "text3", C:Orange(L["gp"]),     "child_text3R",   1, "child_text3G",   1, "child_text3B",   1, "child_justify3", "RIGHT",
-      "text4", C:Orange(L["pr"]),     "child_text4R",   1, "child_text4G",   1, "child_text4B",   0, "child_justify4", "RIGHT"
+      "justify", "CENTER", "justify2", "CENTER", "justify3", "CENTER", "justify4", "CENTER",
+      "text",  C:Orange(L["Name"]),   "child_textR",    1, "child_textG",    1, "child_textB",    1, "child_justify",  "CENTER",
+      "text2", C:Orange(L["ep"]),     "child_text2R",   1, "child_text2G",   1, "child_text2B",   1, "child_justify2", "CENTER",
+      "text3", C:Orange(L["gp"]),     "child_text3R",   1, "child_text3G",   1, "child_text3B",   1, "child_justify3", "CENTER",
+      "text4", C:Orange(L["pr"]),     "child_text4R",   1, "child_text4G",   1, "child_text4B",   0, "child_justify4", "CENTER"
     )
   local t = self:BuildStandingsTable()
   if sepgp.extRemote and sepgp.extRemote:IsActive() then
@@ -528,6 +531,109 @@ function sepgp_standings:OnTooltipUpdate()
     )
   end
 end
+
+-------------------------------------------------------------------------
+-- Column delimiters for the standings window.
+--
+-- Tablet-2.0 caps a category at 6 columns, so real "|" delimiter columns
+-- (Name | ep | gp | pr = 7) don't fit. Instead this draws thin vertical
+-- thin dark-gray lines, on top
+-- of the standings window, positioned from where Tablet actually placed
+-- the columns. Tablet lays a category's columns out left to right with an
+-- equal gap between neighbours, so a delimiter goes in the middle of each
+-- gap -- read from any one visible row's cells (all rows share the same
+-- column widths). It re-reads that a few times a second, so it follows
+-- the window being resized, refreshed or scrolled, and it costs a handful
+-- of API calls per check, and nothing at all while the window is closed.
+-------------------------------------------------------------------------
+local DELIM_R, DELIM_G, DELIM_B, DELIM_A = 0.15, 0.15, 0.15, 1   -- dark gray
+local DELIM_INTERVAL = 0.2
+local delimFrames = {}  -- pooled Tablet frames we've put delimiter lines on
+
+local function hideDelimiters(tip)
+  local lines = tip and tip.sepgpColDelims
+  if lines then
+    for i = 1, 3 do lines[i]:Hide() end
+  end
+end
+
+local function getDelimiters(tip)
+  local lines = tip.sepgpColDelims
+  if not lines then
+    lines = {}
+    for i = 1, 3 do
+      local line = tip:CreateTexture(nil, "OVERLAY")
+      line:SetWidth(1)
+      line:SetTexture(DELIM_R, DELIM_G, DELIM_B, DELIM_A)
+      line:Hide()
+      lines[i] = line
+    end
+    tip.sepgpColDelims = lines
+    table.insert(delimFrames, tip)
+  end
+  return lines
+end
+
+local function updateColumnDelimiters()
+  local reg = T.registry and T.registry.sepgp_standings
+  local tip = reg and reg.tooltip
+
+  -- Tablet's window frames are pooled and shared with other addons: make
+  -- sure the lines only show while a frame is showing OUR standings.
+  local ours = tip and tip.owner == "sepgp_standings" and tip:IsShown()
+  for i = 1, table.getn(delimFrames) do
+    if delimFrames[i] ~= tip or not ours then hideDelimiters(delimFrames[i]) end
+  end
+  if not ours then return end
+  if not (tip.lefts and tip.rights and tip.thirds and tip.fourths) then return end
+
+  -- first/last row that actually has all four columns showing
+  local first, last
+  for i = 1, (tip.numLines or 0) do
+    local cell = tip.fourths[i]
+    if cell and cell:IsShown() then
+      if not first then first = i end
+      last = i
+    end
+  end
+  if not first then
+    hideDelimiters(tip)
+    return
+  end
+
+  local c1, c2, c3, c4 = tip.lefts[first], tip.rights[first], tip.thirds[first], tip.fourths[first]
+  local frameLeft, frameTop, frameBottom = tip:GetLeft(), tip:GetTop(), tip:GetBottom()
+  local r1, l2, r2, l3, r3, l4 = c1:GetRight(), c2:GetLeft(), c2:GetRight(), c3:GetLeft(), c3:GetRight(), c4:GetLeft()
+  local top, bottom = c1:GetTop(), tip.lefts[last]:GetBottom()
+  if not (frameLeft and frameTop and frameBottom and r1 and l2 and r2 and l3 and r3 and l4 and top and bottom) then
+    return
+  end
+
+  -- keep the lines inside the window (rows can sit outside it when scrolled)
+  if top > frameTop - 4 then top = frameTop - 4 end
+  if bottom < frameBottom + 6 then bottom = frameBottom + 6 end
+  if top <= bottom then
+    hideDelimiters(tip)
+    return
+  end
+
+  local xs = { (r1 + l2) / 2, (r2 + l3) / 2, (r3 + l4) / 2 }
+  local lines = getDelimiters(tip)
+  for i = 1, 3 do
+    lines[i]:ClearAllPoints()
+    lines[i]:SetPoint("TOPLEFT", tip, "TOPLEFT", xs[i] - frameLeft, top - frameTop)
+    lines[i]:SetHeight(top - bottom)
+    lines[i]:Show()
+  end
+end
+
+local delimPoller = CreateFrame("Frame")
+local nextDelimCheck = 0
+delimPoller:SetScript("OnUpdate", function()
+  if GetTime() < nextDelimCheck then return end
+  nextDelimCheck = GetTime() + DELIM_INTERVAL
+  updateColumnDelimiters()
+end)
 
 -- GLOBALS: sepgp_saychannel,sepgp_groupbyclass,sepgp_groupbyarmor,sepgp_groupbyrole,sepgp_raidonly,sepgp_decay,sepgp_minep,sepgp_reservechannel,sepgp_main,sepgp_progress,sepgp_discount,sepgp_log,sepgp_dbver,sepgp_looted
 -- GLOBALS: sepgp,sepgp_prices,sepgp_standings,sepgp_bids,sepgp_loot,sepgp_reserves,sepgp_alts,sepgp_logs
