@@ -1,4 +1,4 @@
-local C = AceLibrary("Crayon-2.0")
+     local C = AceLibrary("Crayon-2.0")
 
 sepgp_bids = sepgp:NewModule("sepgp_bids", "AceDB-2.0", "AceEvent-2.0")
 
@@ -17,7 +17,7 @@ sepgp_bids = sepgp:NewModule("sepgp_bids", "AceDB-2.0", "AceEvent-2.0")
 -- 2026-04-06: Now delegates to sepgp:rollTmWinners() for the actual roll.
 -- Previously this function had its own math.random calls separate from
 -- analyzeLootResolution, producing inconsistent TM winner names between
--- raid chat and officer chat for the same bid. Now both code paths share
+-- raid chat and officer chat for the same bid. Now bot h code paths share
 -- the same roll via the idempotent helper.
 function sepgp_bids:rollAndAnnounceTM(gpWinner)
   local tm_count = table.getn(sepgp.bids_tm)
