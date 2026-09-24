@@ -44,7 +44,7 @@ function sepgp_pfui.IsEnabled()
   return type(_G.pfUI) == "table" and type(_G.pfUI.api) == "table"
 end
 
--- Runs pfUI.api[name](...). Never throws -- a future pfUI update that
+-- Runs pfUI.api[name](unpack(arg)). Never throws -- a future pfUI update that
 -- renames/removes a helper, or a call made before pfUI has fully
 -- initialized (its saved-variable config table isn't ready yet), can't
 -- break BoW-EPGP's own windows. The failure is recorded (and, in debug
@@ -60,7 +60,7 @@ local function callapi(name, ...)
     dprint(lastErrors[name])
     return false
   end
-  local ok, err = pcall(fn, ...)
+  local ok, err = pcall(fn, unpack(arg))
   if ok then
     lastErrors[name] = nil
     dprint(name .. " OK")
