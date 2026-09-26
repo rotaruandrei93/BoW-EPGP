@@ -331,26 +331,50 @@ local function visit(frame)
   end)
 end
 
+-- EnumerateFrames(after) can hard-error on this client ("Couldn't find
+-- 'this' in current object") instead of returning nil, when `after` is
+-- a frame handle that's since been invalidated/destroyed. pcall guards
+-- every call; on failure we return nil (treated the same as "no more
+-- frames for now") and the caller resets its resume point so it starts
+-- clean again instead of hitting the same bad handle every tick.
+local function safeNextFrame(after)
+  local ok, frame = pcall(EnumerateFrames, after)
+  if ok then return frame end
+  return nil, true -- second value: the handle itself was bad
+end
+
 -- Looks at frames created since the last call, at most `budget` of them.
 -- Returns true once it has reached the end of the client's frame list.
 local function walk(budget)
-  local frame = EnumerateFrames(lastFrame)
+  local frame, badHandle = safeNextFrame(lastFrame)
+  if badHandle then
+    lastFrame = nil
+    return false
+  end
   local n = 0
   while frame do
     visit(frame)
     lastFrame = frame
     n = n + 1
     if n >= budget then return false end
-    frame = EnumerateFrames(frame)
+    local nextFrame
+    nextFrame, badHandle = safeNextFrame(frame)
+    if badHandle then
+      lastFrame = nil
+      return false
+    end
+    frame = nextFrame
   end
   return true
 end
 
 local function fullWalk()
-  local frame = EnumerateFrames()
+  local frame = safeNextFrame(nil)
   while frame do
     visit(frame)
-    frame = EnumerateFrames(frame)
+    local badHandle
+    frame, badHandle = safeNextFrame(frame)
+    if badHandle then return end
   end
 end
 
