@@ -312,14 +312,23 @@ local function addTarget(frame, shower)
   hookShow(shower)
 end
 
+-- EnumerateFrames() can hand back objects that don't support the full
+-- widget API on this client (e.g. an internal/engine object that isn't
+-- a real Lua-side Frame) -- calling GetObjectType()/GetParent() on one
+-- of those throws "attempt to call method '...' (a nil value)" even
+-- though `frame` itself isn't nil. pcall guards against that and just
+-- skips the object instead of tainting the whole walk() loop.
 local function visit(frame)
-  if isTarget[frame] or frame:GetObjectType() ~= "Frame" then return end
-  local parent = frame:GetParent()
-  if parent and isDewdropLevel(parent) then
-    addTarget(frame, parent)   -- a level's backdrop child
-  elseif isDewdropPopupHost(frame) then
-    addTarget(frame, frame)    -- slider / edit-box popup panel
-  end
+  if isTarget[frame] then return end
+  pcall(function()
+    if frame:GetObjectType() ~= "Frame" then return end
+    local parent = frame:GetParent()
+    if parent and isDewdropLevel(parent) then
+      addTarget(frame, parent)   -- a level's backdrop child
+    elseif isDewdropPopupHost(frame) then
+      addTarget(frame, frame)    -- slider / edit-box popup panel
+    end
+  end)
 end
 
 -- Looks at frames created since the last call, at most `budget` of them.
