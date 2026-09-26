@@ -2120,14 +2120,20 @@ function sepgp:captureLootCall(text, sender)
     end
     if (link_found) then
       local quality = hexColorQuality[itemColor] or -1
-      if (quality >= 3) then
+      local gp_cost = sepgp_prices:GetPrice(itemString, sepgp_progress)
+      -- FIX: quest-trophy items like Head of Onyxia (both faction
+      -- versions) are below rare quality, so the old "quality >= 3"
+      -- check silently blocked bid calls for them even though
+      -- prices.lua explicitly prices them for GP bidding. Now the
+      -- item is also let through if it has a real GP price, regardless
+      -- of its native item quality.
+      if (quality >= 3) or (gp_cost and gp_cost > 0) then
         if (IsRaidLeader() or self:lootMaster()) and (sender == self._playerName) then
           self:clearBids(true)
           sepgp.bid_item.link = itemString
           sepgp.bid_item.linkFull = itemLink
           sepgp.bid_item.name = string.format("%s%s|r",itemColor,itemName)
           -- Store prices on bid_item so the bid window can access them later
-          local gp_cost = sepgp_prices:GetPrice(itemString, sepgp_progress)
           sepgp.bid_item.price = gp_cost
           sepgp.bid_item.off_price = gp_cost and math.floor(gp_cost * sepgp_discount) or nil
           self:ScheduleEvent("shootyepgpBidTimeout",self.clearBids,300,self)
