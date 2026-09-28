@@ -3304,12 +3304,27 @@ function sepgp:handleBidSync(message, sender)
       -- Try to get the item name and color from the item cache
       local itemName, itemLink, itemQuality = GetItemInfo(itemString)
       if itemName and itemLink then
-        sepgp.bid_item.linkFull = itemLink
         local _, _, itemColor, _, displayName = string.find(itemLink, "^(|c%x+)|H(.+)|h(%[.+%])")
         if itemColor and displayName then
+          sepgp.bid_item.linkFull = itemLink
           sepgp.bid_item.name = string.format("%s%s|r", itemColor, displayName)
         else
-          sepgp.bid_item.name = itemName
+          -- Vanilla/TurtleWoW GetItemInfo returns a plain "item:..." string,
+          -- not a colored hyperlink, so build the rarity color from quality.
+          local qc = itemQuality and ITEM_QUALITY_COLORS[itemQuality]
+          if qc and qc.hex then
+            sepgp.bid_item.name = qc.hex .. itemName .. "|r"
+          elseif mlDisplayName and mlDisplayName ~= "" then
+            sepgp.bid_item.name = mlDisplayName
+          else
+            sepgp.bid_item.name = itemName
+          end
+          if mlFullLink and mlFullLink ~= "" then
+            itemLink = mlFullLink
+          elseif qc and qc.hex then
+            itemLink = string.format("%s|H%s|h[%s]|h|r", qc.hex, itemString, itemName)
+          end
+          sepgp.bid_item.linkFull = itemLink
         end
       else
         -- Item not in client cache. Use ML's transmitted name and link.
