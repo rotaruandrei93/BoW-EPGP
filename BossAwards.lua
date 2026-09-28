@@ -61,6 +61,17 @@ SEPGP_BOSS_AWARDS = {
   ["Ouro"]                      = { ep = 25, zone = "Temple of Ahn'Qiraj" },
   ["C'Thun"]                    = { ep = 30, zone = "Temple of Ahn'Qiraj", id = 15727 },
 
+  -- Timbermaw Hold
+  ["Karrsh the Sentinel"]       = { ep = 2, zone = "Timbermaw Hold", id = 62934 },
+  ["Kodiak & Rotgrowl"]         = { ep = 2, zone = "Timbermaw Hold", encounter = "Kodiak & Rotgrowl" },
+  ["Ormanos the Cracked"]       = { ep = 2, zone = "Timbermaw Hold", id = 62935 },
+  ["Archdruid Kronn"]           = { ep = 2, zone = "Timbermaw Hold", id = 62938 },
+  ["Loktanag the Vile"]         = { ep = 2, zone = "Timbermaw Hold", id = 2139 },
+  ["Trioch the Devourer"]       = { ep = 2, zone = "Timbermaw Hold", id = 62946 },
+  ["Selenaxx Foulheart"]        = { ep = 2, zone = "Timbermaw Hold", id = 62940 },
+  ["Chieftain Partath"]         = { ep = 2, zone = "Timbermaw Hold", id = 62941 },
+  ["Ursol"]                     = { ep = 2, zone = "Timbermaw Hold", id = 62947 },
+
   -- Naxxramas
   ["Anub'Rekhan"]               = { ep = 25, zone = "Naxxramas" },
   ["Grand Widow Faerlina"]      = { ep = 25, zone = "Naxxramas" },
@@ -80,4 +91,29 @@ SEPGP_BOSS_AWARDS = {
   ["Thaddius"]                  = { ep = 25, zone = "Naxxramas" },
   ["Sapphiron"]                 = { ep = 30, zone = "Naxxramas" },
   ["Kel'Thuzad"]                = { ep = 40, zone = "Naxxramas", id = 15990 },
+
+  -- Upper Karazhan Tower / Kara40
+  ["Keeper Gnarlmoon"]          = { ep = 2, zone = "Tower of Karazhan", id = 61939 },
+  ["Ley-Watcher Incantagos"]    = { ep = 2, zone = "Tower of Karazhan", id = 61946 },
+  ["Anomalus"]                  = { ep = 2, zone = "Tower of Karazhan", id = 61951 },
+  ["Echo of Medivh"]            = { ep = 2, zone = "Tower of Karazhan", id = 61958 },
+  ["Chess Event"]               = { ep = 2, zone = "Tower of Karazhan", encounter = "Chess Event" },
+  ["Sanv Tas'dal"]              = { ep = 2, zone = "Tower of Karazhan", id = 59981 },
+  ["Rupturan the Broken"]       = { ep = 2, zone = "Tower of Karazhan", id = 59961 },
+  ["Kruul"]                     = { ep = 2, zone = "Tower of Karazhan", id = 59991 },
+  ["Mephistroth"]               = { ep = 2, zone = "Tower of Karazhan", id = 93333 },
+
+  --World Bosses
+  ["Azuregos"]                  = { ep = 10, zone = "Azshara", id = 6109 },
+  ["Lord Kazzak"]               = { ep = 10, zone = "Blasted Lands", id = 12397 },
+  ["Emeriss"]                   = { ep = 10, zone = "Ashenvale", id = 14889 },
+  ["Lethon"]                    = { ep = 10, zone = "The Hinterlands", id = 14888 },
+  ["Taerar"]                    = { ep = 10, zone = "Ashenvale", id = 14890 },
+  ["Ysondre"]                   = { ep = 10, zone = "Feralas", id = 14887 },
+  ["Cla'ckora"]                 = { ep = 10, zone = "Azshara", id = 59963 },
+  ["Concavius"]                 = { ep = 10, zone = "Desolace", id = 92213 },
+  ["Dark Reaver of Karazhan"]   = { ep = 10, zone = "Deadwind Pass", id = 80936 },
+  ["Ostarius of Uldum"]         = { ep = 10, zone = "Tanaris", id = 80935 },
+  ["Nerubian Overseer"]         = { ep = 10, zone = "Eastern Plaguelands", id = 16184 },
+  ["Father Lycan"]              = { ep = 10, zone = "Hyjal", id = 62059 },
 }
