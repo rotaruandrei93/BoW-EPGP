@@ -14,29 +14,38 @@
 -- rely on the loot-window fallback.
 
 SEPGP_BOSS_AWARDS = {
-  -- Onyxia
-  ["Onyxia"]                    = { ep = 10, zone = "Onyxia's Lair", id = 10184 },
-
   -- Molten Core
-  ["Lucifron"]                  = { ep = 2, zone = "Molten Core" },
-  ["Magmadar"]                  = { ep = 2, zone = "Molten Core" },
-  ["Gehennas"]                  = { ep = 2, zone = "Molten Core" },
-  ["Garr"]                      = { ep = 2, zone = "Molten Core" },
-  ["Shazzrah"]                  = { ep = 2, zone = "Molten Core" },
-  ["Baron Geddon"]              = { ep = 2, zone = "Molten Core" },
-  ["Sulfuron Harbinger"]        = { ep = 2, zone = "Molten Core" },
-  ["Golemagg the Incinerator"]  = { ep = 2, zone = "Molten Core" },
+  ["Lucifron"]                  = { ep = 2, zone = "Molten Core", id = 12118 },
+  ["Magmadar"]                  = { ep = 2, zone = "Molten Core", id = 11982 },
+  ["Garr"]                      = { ep = 2, zone = "Molten Core", id = 12057 },
+  ["Shazzrah"]                  = { ep = 2, zone = "Molten Core", id = 12264 },
+  ["Baron Geddon"]              = { ep = 2, zone = "Molten Core", id = 12056 },
+  ["Sulfuron Harbinger"]        = { ep = 2, zone = "Molten Core", id = 12098 },
+  ["Golemagg the Incinerator"]  = { ep = 2, zone = "Molten Core", id = 11988 },
+  ["Majordomo Executus"]        = { ep = 2, zone = "Molten Core", id = 12018 },
+  ["Incindis"]                  = { ep = 2, zone = "Molten Core", id = 52145 },
+  ["Basalthar & Smoldaris"]     = { ep = 2, zone = "Molten Core", encounter = "Basalthar & Smoldaris" },
+  ["Sorcerer-Thane Thaurissan"] = { ep = 2, zone = "Molten Core", id = 57642 },
   ["Ragnaros"]                  = { ep = 2, zone = "Molten Core", id = 11502 },
 
+  -- Onyxia
+  ["Broodcommander Axelus"]     = { ep = 10, zone = "Onyxia's Lair", id = 49018 },
+  ["Onyxia"]                    = { ep = 10, zone = "Onyxia's Lair", id = 10184 },
+
   -- Blackwing Lair
-  ["Razorgore the Untamed"]     = { ep = 4, zone = "Blackwing Lair" },
-  ["Vaelastrasz the Corrupt"]   = { ep = 4, zone = "Blackwing Lair" },
-  ["Broodlord Lashlayer"]       = { ep = 4, zone = "Blackwing Lair" },
-  ["Firemaw"]                   = { ep = 4, zone = "Blackwing Lair" },
-  ["Ebonroc"]                   = { ep = 4, zone = "Blackwing Lair" },
-  ["Flamegor"]                  = { ep = 4, zone = "Blackwing Lair" },
-  ["Chromaggus"]                = { ep = 4, zone = "Blackwing Lair" },
+  ["Razorgore the Untamed"]     = { ep = 4, zone = "Blackwing Lair", id = 12435 },
+  ["Vaelastrasz the Corrupt"]   = { ep = 4, zone = "Blackwing Lair", id = 13020 },
+  ["Broodlord Lashlayer"]       = { ep = 4, zone = "Blackwing Lair", id = 12017 },
+  ["Firemaw"]                   = { ep = 4, zone = "Blackwing Lair", id = 11983 },
+  ["Ezzel Darkbrewer"]          = { ep = 4, zone = "Blackwing Lair", id = 65148 },
+  ["Ebonroc"]                   = { ep = 4, zone = "Blackwing Lair", id = 14601 },
+  ["Flamegor"]                  = { ep = 4, zone = "Blackwing Lair", id = 11981 },
+  ["Chromaggus"]                = { ep = 4, zone = "Blackwing Lair", id = 14020 },
   ["Nefarian"]                  = { ep = 4, zone = "Blackwing Lair", id = 11583 },
+
+  -- Emerald Sanctum
+  ["Erennius"]                  = { ep = 10, zone = "Onyxia's Lair", id = 60747 },
+  ["Solnius"]                   = { ep = 10, zone = "Onyxia's Lair", id = 60748 },
 
   -- Ahn'Qiraj 40
   ["The Prophet Skeram"]        = { ep = 20, zone = "Temple of Ahn'Qiraj" },
