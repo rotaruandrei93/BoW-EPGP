@@ -41,7 +41,19 @@ end
 -- (normally "pfUI"), with a `.api` table full of skinning helpers once
 -- its own files have finished loading. Both must be present.
 function sepgp_pfui.IsEnabled()
-  return type(_G.pfUI) == "table" and type(_G.pfUI.api) == "table"
+  if type(_G.pfUI) ~= "table" or type(_G.pfUI.api) ~= "table" then
+    return false
+  end
+  -- Some other addon may define a global named pfUI without pfUI actually
+  -- being installed, so also require the real pfUI addon to be loaded and
+  -- to provide its skinning helpers. Otherwise use plain Blizzard buttons.
+  if type(_G.pfUI.api.SkinButton) ~= "function" then
+    return false
+  end
+  if IsAddOnLoaded and not IsAddOnLoaded("pfUI") then
+    return false
+  end
+  return true
 end
 
 -- Runs pfUI.api[name](unpack(arg)). Never throws -- a future pfUI update that
