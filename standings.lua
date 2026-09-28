@@ -316,15 +316,49 @@ function sepgp_standings:Refresh()
   T:Refresh("sepgp_standings")
 end
 
+-- true when the pfUI theme is active: tablet_pfui_skin.lua already puts its
+-- own skinned close button on the window in that case
+local function pfuiHandlesClose()
+  local p = _G.sepgp_pfui
+  if p and type(p.IsEnabled) == "function" then
+    local ok, r = pcall(p.IsEnabled, p)
+    if ok and r then return true end
+  end
+  return false
+end
+
+-- close (X) button for the normal (non-pfUI) theme
+local function ensureCloseButton(tablet)
+  if pfuiHandlesClose() then
+    if tablet.sepgpXBtn then tablet.sepgpXBtn:Hide() end
+    return
+  end
+  local btn = tablet.sepgpXBtn
+  if not btn then
+    btn = CreateFrame("Button", nil, tablet, "UIPanelCloseButton")
+    btn:SetWidth(24)
+    btn:SetHeight(24)
+    btn:SetPoint("TOPRIGHT", tablet, "TOPRIGHT", -2, -2)
+    btn:SetScript("OnClick", function() tablet:Hide() end)
+    tablet.sepgpXBtn = btn
+  end
+  btn:SetFrameLevel((tablet:GetFrameLevel() or 1) + 10)
+  btn:Show()
+end
+
 function sepgp_standings:setHideScript()
   local i = 1
   local tablet = getglobal(string.format("Tablet20DetachedFrame%d",i))
   while (tablet) and i<100 do
     if tablet.owner ~= nil and tablet.owner == "sepgp_standings" then
       sepgp:make_escable(string.format("Tablet20DetachedFrame%d",i),"add")
+      ensureCloseButton(tablet)
       tablet:SetScript("OnHide",nil)
       tablet:SetScript("OnHide",function()
           closeSepgpMenu()
+          -- Tablet frames are pooled and shared: never leave our X on
+          -- a frame another addon may show next
+          if this.sepgpXBtn then this.sepgpXBtn:Hide() end
           if not T:IsAttached("sepgp_standings") then
             T:Attach("sepgp_standings")
             this:SetScript("OnHide",nil)
