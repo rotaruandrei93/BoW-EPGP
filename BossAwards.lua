@@ -44,8 +44,8 @@ SEPGP_BOSS_AWARDS = {
   ["Nefarian"]                  = { ep = 4, zone = "Blackwing Lair", id = 11583 },
 
   -- Emerald Sanctum
-  ["Erennius"]                  = { ep = 10, zone = "Onyxia's Lair", id = 60747 },
-  ["Solnius"]                   = { ep = 10, zone = "Onyxia's Lair", id = 60748 },
+  ["Erennius"]                  = { ep = 10, zone = "Emerald Sanctum", id = 60747 },
+  ["Solnius"]                   = { ep = 10, zone = "Emerald Sanctum", id = 60748 },
 
   -- Ahn'Qiraj 40
   ["The Prophet Skeram"]        = { ep = 20, zone = "Temple of Ahn'Qiraj" },
