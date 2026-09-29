@@ -3543,7 +3543,7 @@ function sepgp:onLootOpened()
         local off_price = math.floor(item.price * (sepgp_discount or 0.5))
         cost_str = string.format(" - GP: %d (OS: %d)", item.price, off_price)
       end
-      SendChatMessage(string.format("[EPGP] %s%s", item.name, cost_str), "RAID_WARNING")
+      SendChatMessage(string.format("[EPGP] %s%s", item.link or item.name, cost_str), "RAID_WARNING")
     end
   end
 
