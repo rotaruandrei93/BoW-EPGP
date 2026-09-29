@@ -3535,7 +3535,9 @@ function sepgp:onLootOpened()
 
   -- Broadcast loot list + GP costs to raid warning so all raiders can see
   if table.getn(epic_items) > 0 then
-    SendChatMessage("[EPGP] === Boss Loot ===", "RAID_WARNING")
+    local item_count = table.getn(epic_items)
+    local count_word = (item_count == 1) and "item" or "items"
+    SendChatMessage(string.format("~ Boss Loot (%d %s) ~", item_count, count_word), "RAID_WARNING")
     for i = 1, table.getn(epic_items) do
       local item = epic_items[i]
       local cost_str = ""
@@ -3543,7 +3545,7 @@ function sepgp:onLootOpened()
         local off_price = math.floor(item.price * (sepgp_discount or 0.5))
         cost_str = string.format(" - GP: %d (OS: %d)", item.price, off_price)
       end
-      SendChatMessage(string.format("[EPGP] %s%s", item.link or item.name, cost_str), "RAID_WARNING")
+      SendChatMessage(string.format("%s%s", item.link or item.name, cost_str), "RAID_WARNING")
     end
   end
 
