@@ -253,6 +253,10 @@ end)
 SLASH_SEPGPBOSSAWARD1 = "/bowepgpboss"
 SlashCmdList["SEPGPBOSSAWARD"] = function(msg)
   msg = string.lower(msg or "")
+  if not CanEditOfficerNote() then
+    say("Boss EP commands are officers only.")
+    return
+  end
   if msg == "auto" then
     sepgp_bossaward_auto = true
     say("Boss EP: AUTO - EP is awarded without a prompt.")
