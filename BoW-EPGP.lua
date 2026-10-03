@@ -2091,6 +2091,10 @@ function sepgp:captureLootCall(text, sender)
   -- Skip our own [EPGP] announcements to prevent cascade: our RAID_WARNING
   -- messages contain |Hitem: links which would re-trigger this handler.
   if string.find(text, "^%[EPGP%]") then return end
+  -- Skip our own Boss Loot list lines ("<item> - GP: 14 (OS: 7)"). They no
+  -- longer start with [EPGP], and their " - " dash was being read as an OS
+  -- bid call, which opened bids for every item in the list.
+  if string.find(text, "GP: %d+ %(OS: %d+%)") then return end
   if not (string.find(text, "|Hitem:", 1, true)) then return end
   local linkstriptext, count = string.gsub(text,"|c%x+|H[eimt:%d]+|h%[[%w%s',%-]+%]|h|r"," ; ")
   if count > 1 then return end
