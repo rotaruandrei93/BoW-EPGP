@@ -795,9 +795,9 @@ local prices = {
 [16946] = {10,"T2"}; -- "Legplates of Ten Storms"
 [58238] = {0,"T2"}; -- "Runed Wardstone"
 
--------------------
------ Azuregos ----
--------------------  
+----------------
+--- Azuregos ---
+----------------  
 
 [17070] = {12,"WB"}; -- "Fang of the Mystics"
 [18202] = {8,"WB"}; -- "Eskhandar's Left Claw"
@@ -813,8 +813,8 @@ local prices = {
 [83544] = {0,"WB"}; -- "Pattern: Stormscale Leggings"
 
 -------------------
------ Lord Kazzak ----
--------------------  
+--- Lord Kazzak ---
+-------------------
 
 [18665] = {0,"WB"}; -- "The Eye of Shadow"
 [17112] = {8,"WB"}; -- "Empyrean Demolisher"
