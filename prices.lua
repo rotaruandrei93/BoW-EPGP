@@ -811,6 +811,22 @@ local prices = {
 [19132] = {14,"WB"}; -- "Crystal Adorned Crown"
 [18704] = {0,"WB"}; -- "Mature Blue Dragon Sinew"
 [83544] = {0,"WB"}; -- "Pattern: Stormscale Leggings"
+
+-------------------
+----- Lord Kazzak ----
+-------------------  
+
+[18665] = {0,"WB"}; -- "The Eye of Shadow"
+[17112] = {8,"WB"}; -- "Empyrean Demolisher"
+[18204] = {7,"WB"}; -- "Eskhandar's Pelt"
+[18543] = {4,"WB"}; -- "Ring of Entropy"
+[18546] = {6,"WB"}; -- "Infernal Headcage"
+[19133] = {7,"WB"}; -- "Fel Infused Leggings"
+[17111] = {8,"WB"}; -- "Blazefury Medallion"
+[17113] = {4,"WB"}; -- "Amberseal Keeper"
+[18544] = {5,"WB"}; -- "Doomhide Gauntlets"
+[19134] = {7,"WB"}; -- "Flayed Doomguard Belt"
+[19135] = {4,"WB"}; -- "Blacklight Bracer"
 }
 sepgp.gp_prices = prices
 --[[local price_scaling = {
