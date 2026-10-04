@@ -2712,6 +2712,9 @@ function sepgp:CreateBidPopup()
         if this.keyword == "PASS" then
           f.statusText:SetText("|cff999999You withdrew your bid|r  |cff66aaff(click to change)|r")
           f.currentBid = nil
+          -- PASS also closes the bid window
+          f:Hide()
+          return
         else
           f.statusText:SetText("Your bid: |cffFFCC00" .. this.keyword .. "|r  |cff66aaff(click to change)|r")
           f.currentBid = this.keyword
