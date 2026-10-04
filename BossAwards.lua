@@ -24,7 +24,8 @@ SEPGP_BOSS_AWARDS = {
   ["Golemagg the Incinerator"]  = { ep = 2, zone = "Molten Core", id = 11988 },
   ["Majordomo Executus"]        = { ep = 2, zone = "Molten Core", id = 12018 },
   ["Incindis"]                  = { ep = 2, zone = "Molten Core", id = 52145 },
-  ["Basalthar & Smoldaris"]     = { ep = 2, zone = "Molten Core", encounter = "Basalthar & Smoldaris" },
+  ["Basalthar"]                 = { ep = 2, zone = "Molten Core", encounter = "Basalthar & Smoldaris" },
+  ["Smoldaris"]                 = { ep = 2, zone = "Molten Core", encounter = "Basalthar & Smoldaris" },
   ["Sorcerer-Thane Thaurissan"] = { ep = 2, zone = "Molten Core", id = 57642 },
   ["Ragnaros"]                  = { ep = 2, zone = "Molten Core", id = 11502 },
 
@@ -63,7 +64,8 @@ SEPGP_BOSS_AWARDS = {
 
   -- Timbermaw Hold
   ["Karrsh the Sentinel"]       = { ep = 2, zone = "Timbermaw Hold", id = 62934 },
-  ["Kodiak & Rotgrowl"]         = { ep = 2, zone = "Timbermaw Hold", encounter = "Kodiak & Rotgrowl" },
+  ["Kodiak"]                    = { ep = 2, zone = "Timbermaw Hold", encounter = "Kodiak & Rotgrowl" },
+  ["Rotgrowl"]                  = { ep = 2, zone = "Timbermaw Hold", encounter = "Kodiak & Rotgrowl" },
   ["Ormanos the Cracked"]       = { ep = 2, zone = "Timbermaw Hold", id = 62935 },
   ["Archdruid Kronn"]           = { ep = 2, zone = "Timbermaw Hold", id = 62938 },
   ["Loktanag the Vile"]         = { ep = 2, zone = "Timbermaw Hold", id = 2139 },
