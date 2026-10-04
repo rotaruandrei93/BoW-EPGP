@@ -3416,51 +3416,14 @@ end
 ------------------------------
 -- Feature 3: Loot Display
 ------------------------------
--- Create the loot display frame
-sepgp._lootDisplayFrame = CreateFrame("Frame", "ShootyEPGP_LootDisplay", UIParent)
-sepgp._lootDisplayFrame:SetWidth(320)
-sepgp._lootDisplayFrame:SetHeight(40)
-sepgp._lootDisplayFrame:SetPoint("TOP", UIParent, "TOP", 0, -120)
-sepgp._lootDisplayFrame:SetFrameStrata("HIGH")
-sepgp._lootDisplayFrame:SetMovable(true)
-sepgp._lootDisplayFrame:EnableMouse(true)
-sepgp._lootDisplayFrame:RegisterForDrag("LeftButton")
-sepgp._lootDisplayFrame:SetScript("OnDragStart", function() this:StartMoving() end)
-sepgp._lootDisplayFrame:SetScript("OnDragStop", function() this:StopMovingOrSizing() end)
-sepgp._lootDisplayFrame:SetBackdrop({
-  bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-  edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-  tile = true, tileSize = 16, edgeSize = 16,
-  insets = { left = 4, right = 4, top = 4, bottom = 4 }
-})
-sepgp._lootDisplayFrame:SetBackdropColor(0, 0, 0, 0.85)
-sepgp._lootDisplayFrame:SetBackdropBorderColor(0.6, 0.2, 0.9, 0.8)
-sepgp._lootDisplayFrame:Hide()
+-- (The "EPGP Loot Drops" window was removed: the loot list is only
+-- announced to raid warning now, nothing is shown on screen.)
 
--- Title bar
-sepgp._lootDisplayFrame.title = sepgp._lootDisplayFrame:CreateFontString(nil, "OVERLAY")
-sepgp._lootDisplayFrame.title:SetFont("Fonts\\FRIZQT__.TTF", 11)
-sepgp._lootDisplayFrame.title:SetPoint("TOP", sepgp._lootDisplayFrame, "TOP", 0, -8)
-sepgp._lootDisplayFrame.title:SetTextColor(1, 0.82, 0)
-sepgp._lootDisplayFrame.title:SetText("EPGP Loot Drops")
-
--- Close button
-sepgp._lootDisplayFrame.close = CreateFrame("Button", nil, sepgp._lootDisplayFrame, "UIPanelCloseButton")
-sepgp._lootDisplayFrame.close:SetWidth(20)
-sepgp._lootDisplayFrame.close:SetHeight(20)
-sepgp._lootDisplayFrame.close:SetPoint("TOPRIGHT", sepgp._lootDisplayFrame, "TOPRIGHT", -2, -2)
-
--- Re-skin with pfUI's border/close button when pfUI is detected as
--- enabled, instead of the default Blizzard tooltip look set up above.
--- Registered (not just called once) because this frame is built at file
--- load time, before we can be sure pfUI has already finished loading.
-sepgp_pfui.Register(sepgp._lootDisplayFrame, function()
-  sepgp_pfui.SkinFrame(sepgp._lootDisplayFrame)
-  sepgp_pfui.SkinCloseButton(sepgp._lootDisplayFrame.close, sepgp._lootDisplayFrame, -2, -2)
-end)
-
--- Item lines storage
-sepgp._lootDisplayLines = {}
+-- Remembers which loot was already announced so that closing and reopening
+-- the loot window on the same corpse does not announce it again.
+-- Each record: { time = GetTime(), items = { [itemLink] = count } }
+sepgp._announcedLoot = sepgp._announcedLoot or {}
+local ANNOUNCE_MEMORY_SECONDS = 900
 
 function sepgp:onLootOpened()
   if not UnitInRaid("player") then return end
@@ -3496,70 +3459,54 @@ function sepgp:onLootOpened()
     end
   end
 
-  if table.getn(epic_items) == 0 then
-    self._lootDisplayFrame:Hide()
-    return
-  end
+  if table.getn(epic_items) == 0 then return end
 
-  -- Clear old item lines
-  for i = 1, table.getn(self._lootDisplayLines) do
-    if self._lootDisplayLines[i] then
-      self._lootDisplayLines[i]:Hide()
-    end
-  end
-  self._lootDisplayLines = {}
-
-  -- Build the display
-  local line_height = 18
-  local padding_top = 24
-  local padding_bottom = 8
-  local frame_height = padding_top + (table.getn(epic_items) * line_height) + padding_bottom
-
-  self._lootDisplayFrame:SetHeight(frame_height)
-
+  -- Count the items currently in the window
+  local current = {}
   for i = 1, table.getn(epic_items) do
-    local item = epic_items[i]
-    local line = self._lootDisplayFrame:CreateFontString(nil, "OVERLAY")
-    line:SetFont("Fonts\\FRIZQT__.TTF", 11)
-    line:SetPoint("TOPLEFT", self._lootDisplayFrame, "TOPLEFT", 10, -(padding_top + (i-1) * line_height))
-    line:SetPoint("RIGHT", self._lootDisplayFrame, "RIGHT", -10, 0)
-    line:SetJustifyH("LEFT")
-
-    local price_text = ""
-    if item.price and item.price > 0 then
-      local off_price = math.floor(item.price * (sepgp_discount or 0.5))
-      price_text = string.format("  |cff32CD32GP:%d|r |cff20B2AAOS:%d|r", item.price, off_price)
-    end
-    line:SetText(string.format("%s%s", item.link, price_text))
-    line:Show()
-    table.insert(self._lootDisplayLines, line)
+    local key = epic_items[i].link
+    current[key] = (current[key] or 0) + 1
   end
 
-  self._lootDisplayFrame:Show()
+  -- Drop expired records, then check whether everything in this window was
+  -- already announced (reopened window, or some items already looted).
+  local now = GetTime()
+  local kept = {}
+  local already = false
+  for i = 1, table.getn(sepgp._announcedLoot) do
+    local rec = sepgp._announcedLoot[i]
+    if now - rec.time < ANNOUNCE_MEMORY_SECONDS then
+      table.insert(kept, rec)
+      if not already then
+        local subset = true
+        for link, cnt in pairs(current) do
+          if (rec.items[link] or 0) < cnt then
+            subset = false
+            break
+          end
+        end
+        if subset then already = true end
+      end
+    end
+  end
+  sepgp._announcedLoot = kept
+  if already then return end
+
+  table.insert(sepgp._announcedLoot, { time = now, items = current })
 
   -- Broadcast loot list + GP costs to raid warning so all raiders can see
-  if table.getn(epic_items) > 0 then
-    local item_count = table.getn(epic_items)
-    local count_word = (item_count == 1) and "item" or "items"
-    SendChatMessage(string.format("~ Boss Loot (%d %s) ~", item_count, count_word), "RAID_WARNING")
-    for i = 1, table.getn(epic_items) do
-      local item = epic_items[i]
-      local cost_str = ""
-      if item.price and item.price > 0 then
-        local off_price = math.floor(item.price * (sepgp_discount or 0.5))
-        cost_str = string.format(" - GP: %d (OS: %d)", item.price, off_price)
-      end
-      SendChatMessage(string.format("%s%s", item.link or item.name, cost_str), "RAID_WARNING")
+  local item_count = table.getn(epic_items)
+  local count_word = (item_count == 1) and "item" or "items"
+  SendChatMessage(string.format("~ Boss Loot (%d %s) ~", item_count, count_word), "RAID_WARNING")
+  for i = 1, item_count do
+    local item = epic_items[i]
+    local cost_str = ""
+    if item.price and item.price > 0 then
+      local off_price = math.floor(item.price * (sepgp_discount or 0.5))
+      cost_str = string.format(" - GP: %d (OS: %d)", item.price, off_price)
     end
+    SendChatMessage(string.format("%s%s", item.link or item.name, cost_str), "RAID_WARNING")
   end
-
-  -- Auto-hide after 30 seconds
-  if self:IsEventScheduled("shootyepgpLootDisplayHide") then
-    self:CancelScheduledEvent("shootyepgpLootDisplayHide")
-  end
-  self:ScheduleEvent("shootyepgpLootDisplayHide", function()
-    sepgp._lootDisplayFrame:Hide()
-  end, 30)
 end
 
 ----------------------------------------------
