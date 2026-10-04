@@ -9,6 +9,10 @@
 --             kill; the prompt appears only after ALL of them have died
 --             (Twin Emperors, Four Horsemen, Bug Trio...). Give them all the same ep.
 --
+-- hard      = optional. { ep = N, alive = "Boss Name" }  Hard mode: if that other boss
+--             is alive and fighting when this boss dies, award N EP instead of ep.
+--             (Emerald Sanctum: Solnius killed while Erennius is tanked.)
+--
 -- Bosses that never "die" (e.g. Majordomo) can't be detected by the combat log;
 -- use "/bossaward now" while targeting the corpse/chest owner, or add them and
 -- rely on the loot-window fallback.
@@ -46,7 +50,7 @@ SEPGP_BOSS_AWARDS = {
 
   -- Emerald Sanctum
   ["Erennius"]                  = { ep = 10, zone = "Emerald Sanctum", id = 60747 },
-  ["Solnius"]                   = { ep = 10, zone = "Emerald Sanctum", id = 60748 },
+  ["Solnius"]                   = { ep = 10, zone = "Emerald Sanctum", id = 60748, hard = { ep = 20, alive = "Erennius" } },
 
   -- Ahn'Qiraj 40
   ["The Prophet Skeram"]        = { ep = 20, zone = "Temple of Ahn'Qiraj" },
