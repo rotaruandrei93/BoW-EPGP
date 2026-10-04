@@ -40,6 +40,56 @@ local function encounterSize(key)
 end
 
 ---------------------------------------------------------------------------
+-- Hard mode detection (e.g. Solnius killed while Erennius is tanked)
+-- Every second the ML looks at what the raid is targeting; a "partner" boss
+-- that is alive and in combat is remembered for a few seconds.
+---------------------------------------------------------------------------
+local ENGAGED_WINDOW = 15   -- seconds a boss still counts as "fighting"
+BA.engaged = {}             -- [bossName] = GetTime() last seen alive + in combat
+
+local function pollEngaged()
+  local watch = {}
+  local any = false
+  for _, e in pairs(SEPGP_BOSS_AWARDS) do
+    if e.hard and e.hard.alive then
+      watch[e.hard.alive] = true
+      any = true
+    end
+  end
+  if not any then return end
+  local now = GetTime()
+  for i = 1, GetNumRaidMembers() do
+    local u = "raid" .. i .. "target"
+    if UnitExists(u) then
+      local n = UnitName(u)
+      if n and watch[n] and (not UnitIsDead(u)) and UnitAffectingCombat(u) then
+        BA.engaged[n] = now
+      end
+    end
+  end
+end
+
+local pollFrame = CreateFrame("Frame")
+pollFrame.t = 0
+pollFrame:SetScript("OnUpdate", function()
+  this.t = this.t + arg1
+  if this.t < 1 then return end
+  this.t = 0
+  if isML() then pollEngaged() end
+end)
+
+-- EP (and display name) for a kill of boss `name`, honouring hard mode.
+local function awardFor(name, e)
+  if e.hard and e.hard.alive then
+    local seen = BA.engaged[e.hard.alive]
+    if seen and (GetTime() - seen) <= ENGAGED_WINDOW then
+      return e.hard.ep, (e.encounter or name) .. " (Hard Mode)"
+    end
+  end
+  return e.ep, (e.encounter or name)
+end
+
+---------------------------------------------------------------------------
 -- Award / decline
 ---------------------------------------------------------------------------
 function BA:Award(p)
@@ -160,6 +210,7 @@ end
 -- Boss death detection
 ---------------------------------------------------------------------------
 function BA:OnBossDeath(name)
+  self.engaged[name] = nil   -- dead bosses no longer count as "fighting"
   local e = SEPGP_BOSS_AWARDS[name]
   if not e then return end
   if not isML() then return end
@@ -176,7 +227,8 @@ function BA:OnBossDeath(name)
   if count < encounterSize(key) then return end   -- wait for the rest of the encounter
 
   self.dead[key] = nil
-  self.pending = { key = key, name = key, ep = e.ep, time = now }
+  local ep, label = awardFor(name, e)
+  self.pending = { key = key, name = label, ep = ep, time = now }
   self.tracking = false
 end
 
@@ -269,7 +321,8 @@ SlashCmdList["SEPGPBOSSAWARD"] = function(msg)
     local e = n and SEPGP_BOSS_AWARDS[n]
     if not e then say("Target a boss listed in BossAwards.lua first.") return end
     BA.awarded[e.encounter or n] = nil
-    BA.pending = { key = e.encounter or n, name = e.encounter or n, ep = e.ep, time = GetTime() }
+    local ep, label = awardFor(n, e)
+    BA.pending = { key = e.encounter or n, name = label, ep = ep, time = GetTime() }
     BA:Fire()
   elseif msg == "test" then
     BA.prompt = { key = "test", name = "Test Boss", ep = 10, test = true }
