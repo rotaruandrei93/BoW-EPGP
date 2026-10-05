@@ -1041,6 +1041,8 @@ local function decorate(tip)
       if tip.sepgpScrollbar then tip.sepgpScrollbar:Hide() end
       if tip.sepgpFrozen then tip.sepgpFrozen.frame:Hide() end
       if tip.lefts[1] then tip.lefts[1]:SetAlpha(1) end
+      if tip.scrollUp then tip.scrollUp:SetAlpha(1) end
+      if tip.scrollDown then tip.scrollDown:SetAlpha(1) end
       restoreDimmed(tip)
       tip.sepgpTouched = nil
     end
@@ -1217,9 +1219,24 @@ local function decorate(tip)
         scrollReserve = (SCROLLBAR_GUTTER * fsp) + SCROLLBAR_WIDTH + (SCROLLBAR_MARGIN * fsp)
       end
       local reserve = pad + scrollReserve
-      local needed = (rightCell:GetRight() + reserve) - tip:GetRight()
-      if needed > 0.05 then
-        tip:SetWidth((tip:GetWidth() or 0) + needed)
+      -- The width is now computed from the column widths, not from
+      -- "how far is the last cell from the window edge". The last column
+      -- stretches to the window's edge, so that distance never reached zero
+      -- and every call added more width (runaway growth). A target worked
+      -- out from fixed numbers is the same on every call, so the window only
+      -- ever grows to that target once and then stays put.
+      if not tip.sepgpOffL and (tip.scroll or 0) == 0 then
+        local lc = tip.lefts[firstReal]
+        local l1, l2 = lc and lc:GetLeft(), tip:GetLeft()
+        if l1 and l2 and l1 - l2 > 0 and l1 - l2 < 60 then tip.sepgpOffL = l1 - l2 end
+      end
+      local ncols, sumW = 0, 0
+      for _, wv in ipairs({ needL, needR, needT, needF }) do
+        if wv > 0 then ncols = ncols + 1; sumW = sumW + wv end
+      end
+      local required = (tip.sepgpOffL or (10 * fsp)) + sumW + (gap or 0) * (ncols > 0 and ncols - 1 or 0) + reserve
+      if (tip:GetWidth() or 0) < required - 0.05 then
+        tip:SetWidth(required)
       end
     end
 
@@ -1306,6 +1323,10 @@ local function decorate(tip)
 
   local headerBtn = headerIdx and tip.buttons[headerIdx]
   local headerH = (headerBtn and headerBtn:GetHeight()) or 0
+  -- Rows whose text is hidden because the frozen title/header overlay covers
+  -- them: their lines/stripes/column dividers must be hidden too, otherwise
+  -- an empty "ghost row" shows between the title and the header.
+  local underOverlay = nil
 
   -- Frozen title/header overlay -- see ensureFrozenHeader() above for why
   -- this exists instead of just repositioning Tablet's own lines. The
@@ -1410,6 +1431,10 @@ local function decorate(tip)
         end
         for _, c in ipairs(dim) do c:SetAlpha(0) end
         tip.sepgpDimmed = dim
+        if (tip.scroll or 0) > 0 then
+          underOverlay = underOverlay or {}
+          underOverlay[headerIdx] = true
+        end
       elseif title then
         title:SetAlpha(1)
       end
@@ -1549,6 +1574,8 @@ local function decorate(tip)
             local b = tip.buttons[i]
             local bt = b and b:IsShown() and b:GetTop()
             if bt and (tt2 - bt) < (contentTopY - tol) then
+              underOverlay = underOverlay or {}
+              underOverlay[i] = true
               local objs = { b, tip.lefts[i], tip.rights[i], tip.thirds[i], tip.fourths and tip.fourths[i] }
               for k = 1, 5 do
                 local o = objs[k]
@@ -1611,8 +1638,10 @@ local function decorate(tip)
   -- 4) draw / clear per line (every button, so nothing stale is left over)
   for i = 1, nButtons do
     local btn = tip.buttons[i]
-    if kinds[i] > 0 then
-      decorateRow(tip, i, i == firstReal, kinds[i] == 2, px, gap, pad, scrollReserve)
+    if kinds[i] > 0 and not (underOverlay and underOverlay[i]) then
+      -- while the overlay is up it draws the line under the header itself,
+      -- so no row gets a "line above the first row" of its own
+      decorateRow(tip, i, (i == firstReal) and not underOverlay, kinds[i] == 2, px, gap, pad, scrollReserve)
     elseif btn.sepgpDecorated then
       hideDeco(btn)
     end
@@ -1656,8 +1685,15 @@ local function decorate(tip)
   -- OnTooltipUpdate, sized by 3b above, gives Tablet the same footer
   -- space as real content it lays out itself, so there's nothing left
   -- here to fight it.
-  if tip.scrollUp then tip.scrollUp:Hide() end
-  if tip.scrollDown then tip.scrollDown:Hide() end
+  -- FIX: do NOT Hide() these. Tablet anchors the first visible row under
+  -- scrollUp (and the rows after it chain off that one). WoW does not
+  -- re-lay-out a hidden region, so every row hanging off it kept its old
+  -- screen position when the window moved or changed size: the black window
+  -- jumped while the text stayed behind. That only happens while scrolled,
+  -- because at scroll 0 the first row hangs straight off the window.
+  -- Invisible but still shown keeps the layout alive.
+  if tip.scrollUp then tip.scrollUp:SetAlpha(0); if (tip.scroll or 0) ~= 0 then tip.scrollUp:Show() end end
+  if tip.scrollDown then tip.scrollDown:SetAlpha(0) end
 
   -- 6) scrollbar: a real, draggable vertical slider mirroring Tablet's own
   -- self.scroll / self.numLines, so it always agrees with the mouse-wheel
@@ -1772,6 +1808,7 @@ SlashCmdList["SEPGPDECO"] = function()
   end
 end
 
+
 -- Tablet-2.0 recomputes every row position and the window height inside
 -- tip:Show(). Wrapping Show() on OUR frame runs the decoration the moment
 -- Tablet is done, in the same frame -- so the lines are there from the very
@@ -1786,6 +1823,8 @@ local function installShowHook(tip)
       for i = 1, table.getn(self.buttons) do self.buttons[i].sepgpGapDelta = nil end
     end
     decorate(self)
+    -- skin in the same frame the window is shown, not one frame later
+    if sepgp_reskinTablet then sepgp_reskinTablet(self) end
   end
 end
 
