@@ -111,14 +111,32 @@ local function reskin(frame)
   updateCloseButton(frame)
 end
 
+-- The poller below runs once per frame, so a window that is shown right
+-- after it has run in that frame is drawn ONCE with Tablet's stock border
+-- (white edge, no close button) before the next pass skins it -- the
+-- "split second without the theme". Skin the frame the instant it is shown
+-- instead, from its own OnShow (fires in the same frame, before anything is
+-- drawn), and expose reskin() so standings.lua can call it too.
+local function hookOnShow(frame)
+  if not frame or frame.sepgpSkinOnShow then return end
+  frame.sepgpSkinOnShow = true
+  local old = frame:GetScript("OnShow")
+  frame:SetScript("OnShow", function()
+    if old then old() end
+    reskin(frame)
+  end)
+end
+sepgp_reskinTablet = function(frame) reskin(frame) end
+
 local function scan()
   local tooltip = _G.Tablet20Frame
-  if tooltip then reskin(tooltip) end
+  if tooltip then hookOnShow(tooltip); reskin(tooltip) end
 
   local i = 1
   while true do
     local frame = _G["Tablet20DetachedFrame" .. i]
     if not frame then break end
+    hookOnShow(frame)
     reskin(frame)
     i = i + 1
   end
