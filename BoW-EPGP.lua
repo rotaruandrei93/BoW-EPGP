@@ -221,6 +221,25 @@ local admincmd, membercmd = {type = "group", handler = sepgp, args = {
       usage = "<itemId>",
       order = 15,
     },
+    tradedone = {
+      type = "text",
+      name = "Trade Done",
+      desc = "Manually clear a pending trade alert. Usage: /sepgp tradedone PlayerName",
+      get = function() return "" end,
+      set = function(v)
+        local n = sepgp:clearPendingTradesFor(v)
+        sepgp:adminSay(string.format("[TRADE] Manually cleared %d pending trade(s) for %s", n, tostring(v)))
+      end,
+      usage = "<name>",
+      order = 12,
+    },
+    trades = {
+      type = "execute",
+      name = "Pending Trades",
+      desc = "List trades still waiting to be completed.",
+      func = function() sepgp:listPendingTrades() end,
+      order = 13,
+    },
     bid = {
       type = "execute",
       name = "Show Bid Window",
@@ -1191,6 +1210,12 @@ function sepgp:addonComms(prefix,message,channel,sender)
     return
   end
 
+  -- Trade completion reports (from the giver or receiver, any raid member)
+  if string.sub(message, 1, 10) == "TRADEDONE;" then
+    if self:inRaid(sender) then self:handleTradeDone(message, sender) end
+    return
+  end
+
   local name_g,class,rank = self:verifyGuildMember(sender,true)
   if not (name_g) then return end -- all other addon messages: guild members only
 
@@ -1626,6 +1651,10 @@ function sepgp:decay_epgp_v3()
   local msg = string.format(L["All EP and GP decayed by %s%%"],(1-sepgp_decay)*100)
   self:simpleSay(msg)
   if not (sepgp_saychannel=="OFFICER") then self:adminSay(msg) end
+  -- also announce the decay in guild chat (skip if it was already sent there)
+  if sepgp_saychannel ~= "GUILD" and IsInGuild() then
+    SendChatMessage(string.format("[EPGP] %s", self:stripColors(msg)), "GUILD")
+  end
   self:adminSay(string.format("[EPGP-AUDIT] %s applied decay %s%%", UnitName("player"), (1-sepgp_decay)*100))
   local addonMsg = string.format("ALL;DECAY;%s",(1-(sepgp_decay or sepgp.VARS.decay))*100)
   self:addonMessage(addonMsg,"GUILD")
@@ -3979,15 +4008,7 @@ function sepgp:ResolveLootConfirm()
     if plan.tm1 then
       SendChatMessage(string.format("[EPGP] Transmog: %s - Trade to %s (%s, %d GP) within 10 min", plan.tm1, winnerName, specType, gpCost), "RAID")
       -- Track pending trade
-      self._pendingTrades = self._pendingTrades or {}
-      table.insert(self._pendingTrades, {
-        from = plan.tm1, to = winnerName, item = itemDisplayName,
-        time = GetTime(), specType = specType,
-      })
-      self:ScheduleEvent("sepgpTradeTimeout_" .. plan.tm1 .. winnerName, function()
-        sepgp:defaultPrint(string.format("|cffFF0000[TRADE ALERT]|r %s has not traded %s to %s! (10 min timeout)", plan.tm1, itemDisplayName or "item", winnerName))
-        sepgp:adminSay(string.format("[EPGP] TRADE TIMEOUT: %s -> %s for %s (10 min expired)", plan.tm1, winnerName, itemDisplayName or "?"))
-      end, 600)
+      sepgp:trackPendingTrade(plan.tm1, winnerName, itemDisplayName, specType, plan.itemLink)
     end
 
     data[self.loot_index.action] = (specType == "MS" and self.VARS.msgp) or (specType == "OS" and self.VARS.osgp) or self.VARS.flexgp
@@ -4032,12 +4053,7 @@ function sepgp:ResolveLootConfirm()
       self:adminSay(string.format("[EPGP-AUDIT] %s: %s (0 GP) - TM: %s - DE: %s - Route: %s(TM) -> %s(DE)",
         officer, itemDisplayName or "?", tm1, plan.dePlayer, tm1, plan.dePlayer))
       -- Track pending trade
-      self._pendingTrades = self._pendingTrades or {}
-      table.insert(self._pendingTrades, { from = tm1, to = plan.dePlayer, item = itemDisplayName, time = GetTime(), specType = "DE" })
-      self:ScheduleEvent("sepgpTradeTimeout_" .. tm1 .. plan.dePlayer, function()
-        sepgp:defaultPrint(string.format("|cffFF0000[TRADE ALERT]|r %s has not traded %s to %s for DE! (10 min timeout)", tm1, itemDisplayName or "item", plan.dePlayer))
-        sepgp:adminSay(string.format("[EPGP] TRADE TIMEOUT: %s -> %s for DE of %s (10 min expired)", tm1, plan.dePlayer, itemDisplayName or "?"))
-      end, 600)
+      sepgp:trackPendingTrade(tm1, plan.dePlayer, itemDisplayName, "DE", plan.itemLink)
       self:writeDebugLog(string.format("RESOLUTION_CONFIRM | TM1_DETRADE | %s -> %s | %s", tm1, plan.dePlayer, itemDisplayName or "?"))
     else
       -- No DE assigned
@@ -4137,6 +4153,176 @@ function sepgp:findLootReminder(itemLink)
     end
   end
 end
+
+-- ===================== Trade tracking (TM holder -> real winner / DE) =====================
+-- A pending trade is created when a bid is resolved. It is cleared when the person
+-- who gave OR received the item sees "Trade complete." and tells the raid (TRADEDONE).
+-- If nothing arrives within 10 minutes, officers get the TRADE ALERT.
+sepgp._pendingTrades = sepgp._pendingTrades or {}
+sepgp._tradeSeq = sepgp._tradeSeq or 0
+
+local function tradeItemName(s)
+  if not s then return "" end
+  s = string.gsub(s, "|c%x%x%x%x%x%x%x%x", "")
+  s = string.gsub(s, "|H[^|]*|h", "")
+  s = string.gsub(s, "|h", "")
+  s = string.gsub(s, "|r", "")
+  s = string.gsub(s, "[%[%]]", "")
+  return s
+end
+
+function sepgp:adminSayLink(msg)
+  -- like adminSay but keeps real item links clickable in officer chat
+  SendChatMessage(string.format("BoW-EPGP: %s", msg), "OFFICER")
+end
+
+function sepgp:trackPendingTrade(from, to, item, specType, link)
+  if not (from and to) then return end
+  self._pendingTrades = self._pendingTrades or {}
+  self._tradeSeq = (self._tradeSeq or 0) + 1
+  local entry = {
+    from = from, to = to, item = item, link = link, specType = specType,
+    time = GetTime(), eventId = "sepgpTradeTimeout_" .. self._tradeSeq,
+  }
+  table.insert(self._pendingTrades, entry)
+  self:ScheduleEvent(entry.eventId, function()
+    local list = sepgp._pendingTrades
+    for i = 1, table.getn(list) do
+      if list[i] == entry then
+        table.remove(list, i)
+        local itemTxt = entry.link or entry.item or "item"
+        if entry.specType == "DE" then
+          sepgp:adminSayLink(string.format("[EPGP] TRADE TIMEOUT: %s -> %s for DE of %s (10 min expired)", entry.from, entry.to, itemTxt))
+        else
+          sepgp:adminSayLink(string.format("[EPGP] TRADE TIMEOUT: %s -> %s for %s (10 min expired)", entry.from, entry.to, itemTxt))
+        end
+        sepgp:writeDebugLog(string.format("TRADE_TIMEOUT | %s -> %s | %s", entry.from, entry.to, itemTxt))
+        return
+      end
+    end
+  end, 600)
+end
+
+function sepgp:completePendingTrade(from, to, itemName)
+  local list = self._pendingTrades
+  if (not list) or table.getn(list) == 0 or (not from) or (not to) then return false end
+  local lf, lt = string.lower(from), string.lower(to)
+  local ln = string.lower(tradeItemName(itemName))
+  local found
+  for i = 1, table.getn(list) do
+    local e = list[i]
+    if string.lower(e.from) == lf and string.lower(e.to) == lt then
+      local en = string.lower(tradeItemName(e.item))
+      if ln == "" or en == "" or en == ln then
+        found = i
+        break
+      end
+    end
+  end
+  if not found then return false end
+  local e = table.remove(list, found)
+  self:CancelScheduledEvent(e.eventId)
+  local what = (e.specType == "DE") and "for disenchant" or (e.specType and ("as " .. e.specType) or "")
+  self:adminSayLink(string.format("[TRADE COMPLETE] %s gave %s to %s %s - done %.1f min after the award", e.from, e.link or e.item or "the item", e.to, what, (GetTime() - e.time) / 60))
+  self:writeDebugLog(string.format("TRADE_DONE | %s -> %s | %s", e.from, e.to, e.item or "?"))
+  return true
+end
+
+function sepgp:clearPendingTradesFor(name)
+  local list = self._pendingTrades or {}
+  local ln = string.lower(name or "")
+  local n, i = 0, 1
+  while i <= table.getn(list) do
+    local e = list[i]
+    if string.lower(e.from) == ln or string.lower(e.to) == ln then
+      table.remove(list, i)
+      self:CancelScheduledEvent(e.eventId)
+      n = n + 1
+    else
+      i = i + 1
+    end
+  end
+  return n
+end
+
+function sepgp:listPendingTrades()
+  local list = self._pendingTrades or {}
+  if table.getn(list) == 0 then
+    self:defaultPrint("No pending trades.")
+    return
+  end
+  for i = 1, table.getn(list) do
+    local e = list[i]
+    self:defaultPrint(string.format("Pending: %s -> %s | %s | %.1f min ago", e.from, e.to, e.item or "?", (GetTime() - e.time) / 60))
+  end
+end
+
+function sepgp:handleTradeDone(message, sender)
+  local _, _, giver, receiver, item = string.find(message, "^TRADEDONE;([^;]+);([^;]+);(.*)$")
+  if not (giver and receiver) then return end
+  local ls = string.lower(sender or "")
+  if ls ~= string.lower(giver) and ls ~= string.lower(receiver) then return end
+  self:completePendingTrade(giver, receiver, item)
+end
+
+function sepgp:reportTradeDone(giver, receiver, itemLink)
+  local name = tradeItemName(itemLink)
+  self:completePendingTrade(giver, receiver, name)
+  if GetNumRaidMembers() > 0 then
+    self:addonMessage(string.format("TRADEDONE;%s;%s;%s", giver, receiver, name), "RAID")
+  end
+end
+
+-- Watches OUR OWN trades (works for any raider with the addon, not only the officer).
+local tradeSnap = { partner = nil, live = nil, final = nil, done = false }
+
+local function tradeTakeSnapshot()
+  local snap = { mine = {}, theirs = {} }
+  for id = 1, 6 do
+    local l = GetTradePlayerItemLink(id)
+    if l then table.insert(snap.mine, l) end
+    local t = GetTradeTargetItemLink(id)
+    if t then table.insert(snap.theirs, t) end
+  end
+  tradeSnap.live = snap
+end
+
+local function tradeOnComplete()
+  if tradeSnap.done then return end
+  local src = tradeSnap.final or tradeSnap.live
+  if (not src) or (not tradeSnap.partner) then return end
+  tradeSnap.done = true
+  local me = sepgp._playerName
+  for i = 1, table.getn(src.mine) do
+    sepgp:reportTradeDone(me, tradeSnap.partner, src.mine[i])
+  end
+  for i = 1, table.getn(src.theirs) do
+    sepgp:reportTradeDone(tradeSnap.partner, me, src.theirs[i])
+  end
+end
+
+local tradeWatcher = CreateFrame("Frame")
+tradeWatcher:RegisterEvent("TRADE_SHOW")
+tradeWatcher:RegisterEvent("TRADE_ACCEPT_UPDATE")
+tradeWatcher:RegisterEvent("TRADE_PLAYER_ITEM_CHANGED")
+tradeWatcher:RegisterEvent("TRADE_TARGET_ITEM_CHANGED")
+tradeWatcher:RegisterEvent("UI_INFO_MESSAGE")
+tradeWatcher:RegisterEvent("CHAT_MSG_SYSTEM")
+tradeWatcher:SetScript("OnEvent", function()
+  if event == "TRADE_SHOW" then
+    tradeSnap.partner = UnitName("NPC") or UnitName("target")
+    tradeSnap.live, tradeSnap.final, tradeSnap.done = nil, nil, false
+    tradeTakeSnapshot()
+  elseif event == "TRADE_ACCEPT_UPDATE" then
+    tradeTakeSnapshot()
+    if arg1 == 1 and arg2 == 1 then tradeSnap.final = tradeSnap.live end
+  elseif event == "TRADE_PLAYER_ITEM_CHANGED" or event == "TRADE_TARGET_ITEM_CHANGED" then
+    tradeTakeSnapshot()
+  elseif event == "UI_INFO_MESSAGE" or event == "CHAT_MSG_SYSTEM" then
+    if arg1 == (ERR_TRADE_COMPLETE or "Trade complete.") then tradeOnComplete() end
+  end
+end)
+-- =================== end trade tracking ===================
 
 function sepgp:tradeLoot(playerState,targetState)
   if not (UnitInRaid("player") and self:lootMaster() and admin()) then return end
@@ -4787,20 +4973,7 @@ local sepgp_auto_gp_menu = {
         SendChatMessage(string.format("[EPGP] Transmog: %s - Trade to %s (%s, %d GP) within 10 min", tm_holder, real_winner, spec_type, gp_cost), "RAID")
         sepgp:writeDebugLog(string.format("TM_RAID_MSG | holder=%s winner=%s spec=%s gp=%d", tm_holder, real_winner, spec_type, gp_cost))
         -- Phase 5: Track pending trade
-        sepgp._pendingTrades = sepgp._pendingTrades or {}
-        table.insert(sepgp._pendingTrades, {
-          from = tm_holder,
-          to = real_winner,
-          item = itemDisplayName,
-          time = GetTime(),
-          specType = spec_type,
-        })
-        -- Schedule 10-minute trade timeout alert
-        sepgp:ScheduleEvent("sepgpTradeTimeout_" .. tm_holder .. real_winner, function()
-          sepgp:defaultPrint(string.format("|cffFF0000[TRADE ALERT]|r %s has not traded %s to %s! (10 min timeout)", tm_holder, itemDisplayName or "item", real_winner))
-          sepgp:adminSay(string.format("[EPGP] TRADE TIMEOUT: %s -> %s for %s (10 min expired)", tm_holder, real_winner, itemDisplayName or "?"))
-          sepgp:writeDebugLog(string.format("TRADE_TIMEOUT | %s -> %s | %s", tm_holder, real_winner, itemDisplayName or "?"))
-        end, 600)
+        sepgp:trackPendingTrade(tm_holder, real_winner, itemDisplayName, spec_type, itemLink)
         sepgp:writeDebugLog(string.format("POPUP_ACTION | TM+%s | holder=%s | winner=%s | %d GP | %s | %s", spec_type, tm_holder, real_winner, gp_cost, itemDisplayName or "?", routeInfo))
       else
         -- TM only (no MS/FLEX/OS bids). Handle all TM+DE scenarios.
@@ -4872,12 +5045,7 @@ local sepgp_auto_gp_menu = {
               SendChatMessage(string.format("[EPGP] Transmog (0 GP): %s -> trade to %s for DE", tm_name, de_player), "RAID")
               sepgp:adminSay(string.format("[EPGP-AUDIT] %s: %s (0 GP) - TM: %s - DE: %s - Route: %s(TM) -> %s(DE)", UnitName("player"), itemDisplayName or "?", tm_name, de_player, tm_name, de_player))
               -- Track pending trade
-              sepgp._pendingTrades = sepgp._pendingTrades or {}
-              table.insert(sepgp._pendingTrades, { from = tm_name, to = de_player, item = itemDisplayName, time = GetTime(), specType = "DE" })
-              sepgp:ScheduleEvent("sepgpTradeTimeout_" .. tm_name .. de_player, function()
-                sepgp:defaultPrint(string.format("|cffFF0000[TRADE ALERT]|r %s has not traded %s to %s for DE! (10 min timeout)", tm_name, itemDisplayName or "item", de_player))
-                sepgp:adminSay(string.format("[EPGP] TRADE TIMEOUT: %s -> %s for DE of %s (10 min expired)", tm_name, de_player, itemDisplayName or "?"))
-              end, 600)
+              sepgp:trackPendingTrade(tm_name, de_player, itemDisplayName, "DE", itemLink)
             else
               SendChatMessage(string.format("[EPGP] Transmog only (0 GP) - %s", tm_name), "RAID")
               sepgp:adminSay(string.format("[EPGP-AUDIT] %s: %s (0 GP) - TM: %s (no DE assigned)", UnitName("player"), itemDisplayName or "?", tm_name))
