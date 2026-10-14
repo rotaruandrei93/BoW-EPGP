@@ -34,7 +34,7 @@ function sepgp_bids:rollAndAnnounceTM(gpWinner)
   sepgp:widestAudience("[EPGP] TM Bidders: " .. table.concat(tm_names, ", "))
 
   if tm_count == 1 then
-    sepgp:widestAudience(string.format("[EPGP] Transmog: %s wins (auto-win, 1 bidder) - 0 GP", sepgp.tm_winner))
+    sepgp:widestAudience(string.format("[EPGP] Transmog: %s wins (auto-win, 1 bidder) - 0 GP - %s", sepgp.tm_winner, (sepgp.bid_item and sepgp.bid_item.linkFull) or "item"))
   else
     -- Show assignments so raid can see who is what number
     local assignMsg = "[EPGP] TM Roll: "
@@ -61,11 +61,11 @@ function sepgp_bids:rollAndAnnounceTM(gpWinner)
       end
       sepgp:widestAudience(string.format("[EPGP] Rolling 1-%d (remaining) ... result: %d -> %s wins TM#2", remCount, roll2Idx or 0, sepgp.tm_winner2))
     end
-    sepgp:widestAudience(string.format("[EPGP] Transmog winners: TM#1 %s, TM#2 %s - 0 GP", sepgp.tm_winner, sepgp.tm_winner2 or "none"))
+    sepgp:widestAudience(string.format("[EPGP] Transmog winners: TM#1 %s, TM#2 %s - 0 GP - %s", sepgp.tm_winner, sepgp.tm_winner2 or "none", (sepgp.bid_item and sepgp.bid_item.linkFull) or "item"))
   end
 
   if gpWinner then
-    SendChatMessage(string.format("[EPGP] %s gets item (GP charged). %s gets transmog appearance - trade within 10 min.", gpWinner, sepgp.tm_winner), "RAID")
+    SendChatMessage(string.format("[EPGP] %s gets %s (GP charged). %s gets transmog appearance - trade within 10 min.", gpWinner, (sepgp.bid_item and sepgp.bid_item.linkFull) or "item", sepgp.tm_winner), "RAID")
   end
 end
 
@@ -156,5 +156,5 @@ function sepgp_bids:bidCountdown()
   self:ScheduleEvent("shootyepgpBidCountdownFinish",self.countdownFinish,duration,self)
 end
 
--- GLOBALS: sepgp_saychannel,sepgp_groupbyclass,sepgp_groupbyarmor,sepgp_groupbyrole,sepgp_raidonly,sepgp_decay,sepgp_minep,sepgp_reservechannel,sepgp_main,sepgp_progress,sepgp_discount,sepgp_log,sepgp_dbver,sepgp_looted
--- GLOBALS: sepgp,sepgp_prices,sepgp_standings,sepgp_bids,sepgp_loot,sepgp_reserves,sepgp_alts,sepgp_logs
+-- GLOBALS: sepgp_saychannel,sepgp_groupbyclass,sepgp_groupbyarmor,sepgp_groupbyrole,sepgp_raidonly,sepgp_decay,sepgp_minep,sepgp_main,sepgp_progress,sepgp_discount,sepgp_log,sepgp_dbver,sepgp_looted
+-- GLOBALS: sepgp,sepgp_prices,sepgp_standings,sepgp_bids,sepgp_loot,sepgp_alts,sepgp_logs
