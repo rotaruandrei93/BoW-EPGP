@@ -1933,6 +1933,18 @@ function sepgp:captureLootCall(text, sender)
   -- Skip our own [EPGP] announcements to prevent cascade: our RAID_WARNING
   -- messages contain |Hitem: links which would re-trigger this handler.
   if string.find(text, "^%[EPGP%]") then return end
+  -- "Random Rolling [item]" raid warning: the item is being decided by a plain
+  -- /roll, not by bids. Remember it so that when the master looter then hands
+  -- the item to the roll winner we don't treat it as "no bids -> bank/DE".
+  if string.find(string.lower(text), "random%s+roll", 1) and string.find(text, "|Hitem:", 1, true) then
+    local _, _, rrLink = string.find(text, "(|c%x+|H[eimt:%d]+|h%[[^%]]+%]|h|r)")
+    if rrLink then
+      self._randomRollItems = self._randomRollItems or {}
+      self._randomRollItems[rrLink] = GetTime()
+      self:writeDebugLog("RANDOM_ROLL_ANNOUNCED | " .. tostring(rrLink))
+    end
+    return
+  end
   -- Skip our own Boss Loot list lines ("<item> - GP: 14 (OS: 7)"). They no
   -- longer start with [EPGP], and their " - " dash was being read as an OS
   -- bid call, which opened bids for every item in the list.
@@ -3310,6 +3322,23 @@ function sepgp:writeDebugLog(msg)
   end
 end
 
+-- Who may change banker / disenchanter / no-bid settings: raid leader, raid
+-- assistants (officers) or the master looter. Outside a group everyone may
+-- (it only touches their own saved settings).
+function sepgp:canManageLoot()
+  if GetNumRaidMembers() > 0 then
+    return (IsRaidLeader() or IsRaidOfficer() or self:lootMaster()) and true or false
+  end
+  if GetNumPartyMembers() > 0 then
+    return ((IsPartyLeader and IsPartyLeader()) or self:lootMaster()) and true or false
+  end
+  return true
+end
+
+function sepgp:denyLootManage()
+  self:defaultPrint("|cffff0000Only the raid leader, an assistant or the master looter can change the banker / disenchanter.|r")
+end
+
 -- DE Roster: tracks which raid members can disenchant.
 -- Stored in sepgp_de_roster SavedVariable (per-character).
 -- Usage: /bowepgp de add Fieldwalker
@@ -3337,6 +3366,7 @@ function sepgp:normalizeName(name)
 end
 
 function sepgp:deRosterAdd(name)
+  if not self:canManageLoot() then self:denyLootManage() return false end
   name = self:normalizeName(name)
   if not name then
     self:defaultPrint("Usage: /deadd PlayerName")
@@ -3347,9 +3377,11 @@ function sepgp:deRosterAdd(name)
   sepgp_de_roster[name] = true
   self:defaultPrint(string.format("Added %s to DE roster.", name))
   self:writeDebugLog("DE_ROSTER_ADD | " .. name)
+  return true
 end
 
 function sepgp:deRosterRemove(name)
+  if not self:canManageLoot() then self:denyLootManage() return false end
   name = self:normalizeName(name)
   if not name then
     self:defaultPrint("Usage: /deremove PlayerName")
@@ -3432,6 +3464,7 @@ function sepgp:SetBanker(msg)
     end
     return
   end
+  if not self:canManageLoot() then self:denyLootManage() return false end
   if string.lower(name) == "clear" then
     sepgp_banker = nil
     self:defaultPrint("Banker cleared.")
@@ -3439,10 +3472,15 @@ function sepgp:SetBanker(msg)
   end
   sepgp_banker = name
   self:defaultPrint(string.format("Banker set to %s.", name))
+  return true
 end
 
 function sepgp:SetNoBidTarget(msg)
   msg = string.lower(msg or "")
+  if (string.find(msg, "bank") or string.find(msg, "de")) and not self:canManageLoot() then
+    self:denyLootManage()
+    return
+  end
   if string.find(msg, "bank") then
     sepgp_nobid_target = "banker"
     self:defaultPrint("Unbid items now go to the banker first (disenchanter if no banker is set).")
@@ -4443,6 +4481,27 @@ function sepgp:processLoot(player,itemLink,source)
       local age = GetTime() - self._popupShownLinks[itemLink]
       if age < 60 then
         self:writeDebugLog(string.format("PROCESS_LOOT_SKIP_DUPE | %s | already shown via bid window %.1fs ago", itemLink, age))
+        return
+      end
+    end
+    -- Item was announced as a random roll: the roll winner just got it. No bids
+    -- exist, so do NOT run the no-bid (bank/DE) resolution and do not charge GP.
+    self._randomRollItems = self._randomRollItems or {}
+    self._randomRollDone = self._randomRollDone or {}
+    local rrNow = GetTime()
+    local rrWho = (player == YOU) and self._playerName or player
+    local rrDone = self._randomRollDone[itemLink]
+    if rrDone and rrDone.player == rrWho and (rrNow - rrDone.t) < 5 then
+      return -- second event (chat + masterloot) for the same hand-out
+    end
+    local rrT = self._randomRollItems[itemLink]
+    if rrT then
+      self._randomRollItems[itemLink] = nil
+      if (rrNow - rrT) < 300 then
+        self._randomRollDone[itemLink] = { player = rrWho, t = rrNow }
+        self:defaultPrint(string.format("Random roll: %s went to %s - no GP charged, not sent to bank/DE.", itemLink, tostring(rrWho)))
+        self:adminSay(string.format("[EPGP-AUDIT] %s: %s -> %s (random roll, 0 GP)", UnitName("player"), itemLink, tostring(rrWho)))
+        self:writeDebugLog(string.format("PROCESS_LOOT_SKIP | random roll | %s | %s", tostring(rrWho), itemLink))
         return
       end
     end
