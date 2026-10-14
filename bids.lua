@@ -104,21 +104,12 @@ end
 -- second resolution if the officer also master-loots via WoW's native UI.
 local function resolveActiveBid()
   if not (sepgp.bid_item and sepgp.bid_item.linkFull) then
-    sepgp:writeDebugLog("BID_AUTO_RESOLVE | SKIP | no bid_item")
+    sepgp:writeDebugLog("BID_COUNTDOWN_END | SKIP | no bid_item")
     return
   end
-  local itemLink = sepgp.bid_item.linkFull
-  local data = {
-    [sepgp.loot_index.time] = date("%H:%M"),
-    [sepgp.loot_index.item] = itemLink,
-    [sepgp.loot_index.bind] = sepgp.VARS.bop,
-    [sepgp.loot_index.price] = sepgp.bid_item.price or 0,
-    [sepgp.loot_index.off_price] = sepgp.bid_item.off_price or 0,
-  }
-  sepgp:writeDebugLog("BID_AUTO_RESOLVE | " .. itemLink)
-  sepgp._popupShownLinks = sepgp._popupShownLinks or {}
-  sepgp._popupShownLinks[itemLink] = GetTime()
-  sepgp:AutoResolveLoot(data)
+  -- Countdown over: lock bids, announce the winner(s) in chat and open the
+  -- Award / Re-bid window (awardwindow.lua). GP is only charged on Award.
+  sepgp:OnBidCountdownEnd()
 end
 
 -- Only the final N seconds are announced to raid chat; the earlier ticks of
@@ -160,6 +151,7 @@ end
 function sepgp_bids:bidCountdown()
   self:countdownFinish(true)
   local duration = sepgp_bidtimer or sepgp.VARS.bidtimer
+  if sepgp.StartBidTimer then sepgp:StartBidTimer(duration) end
   self:ScheduleRepeatingEvent("shootyepgpBidCountdown",self.countdownCounter,1,self)
   self:ScheduleEvent("shootyepgpBidCountdownFinish",self.countdownFinish,duration,self)
 end
