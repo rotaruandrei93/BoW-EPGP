@@ -34,18 +34,34 @@ if origOnClick then
     local name = frame and frame.name
     if not name or name == "" then return end
     if not sepgp:canManageLoot() then sepgp:denyLootManage() return end
+    local norm = sepgp:normalizeName(name)
     if kind == "bank" then
-      sepgp:SetBanker(name)
+      -- clicking the current banker again clears the role
+      if sepgp_banker and norm and string.lower(sepgp_banker) == string.lower(norm) then
+        sepgp:SetBanker("clear")
+      else
+        sepgp:SetBanker(name)
+      end
     else
-      if sepgp:deRosterAdd(name) then
-        sepgp_de_primary = sepgp:normalizeName(name)
-        sepgp:defaultPrint(string.format("%s is now the first-choice disenchanter.", sepgp_de_primary))
+      local cur = sepgp:GetDisenchanter()
+      if cur and norm and string.lower(cur) == string.lower(norm) then
+        -- clicking the current disenchanter again clears the role
+        if sepgp:deRosterRemove(name) then
+          sepgp_de_primary = nil
+          sepgp:defaultPrint(string.format("%s is no longer the disenchanter.", norm))
+        end
+      else
+        -- deRosterAdd keeps only one disenchanter (replaces the previous one)
+        if sepgp:deRosterAdd(name) then
+          sepgp:defaultPrint(string.format("%s is now the disenchanter.", norm))
+        end
       end
     end
   end
 end
 
 -- ---- visibility: only ML / raid leader, only for people in the group ----
+local origText = {}
 local origHide = UnitPopup_HideButtons
 if origHide then
   UnitPopup_HideButtons = function()
@@ -57,6 +73,22 @@ if origHide then
       if isOurs(value) then
         if not sepgp:canManageLoot() then
           UnitPopupShown[index] = 0
+        end
+        -- relabel to "Remove ..." when the clicked player already has the role
+        local btn = UnitPopupButtons[value]
+        if btn then
+          if not origText[value] then origText[value] = btn.text end
+          local target = frame.name or (unit and UnitName(unit))
+          local label = origText[value]
+          if target then
+            local t = string.lower(target)
+            local isBank = (ACTION[value] == "bank")
+            local cur = isBank and sepgp_banker or sepgp:GetDisenchanter()
+            if cur and string.lower(cur) == t then
+              label = isBank and "Remove Banker" or "Remove Disenchanter"
+            end
+          end
+          btn.text = label
         end
         if unit and UnitIsPlayer(unit) and not (UnitInRaid(unit) or (UnitInParty(unit) and UnitExists("party1"))) then
           UnitPopupShown[index] = 0
