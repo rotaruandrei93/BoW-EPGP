@@ -3372,9 +3372,10 @@ function sepgp:deRosterAdd(name)
     self:defaultPrint("Usage: /deadd PlayerName")
     return
   end
-  -- Remove any case variants first to prevent duplicates
-  self:deRosterClean(name)
+  -- Only one disenchanter at a time: adding someone replaces whoever was set
+  for k in pairs(sepgp_de_roster) do sepgp_de_roster[k] = nil end
   sepgp_de_roster[name] = true
+  sepgp_de_primary = name
   self:defaultPrint(string.format("Added %s to DE roster.", name))
   self:writeDebugLog("DE_ROSTER_ADD | " .. name)
   return true
@@ -3391,6 +3392,7 @@ function sepgp:deRosterRemove(name)
   self:deRosterClean(name)
   self:defaultPrint(string.format("Removed %s from DE roster.", name))
   self:writeDebugLog("DE_ROSTER_REMOVE | " .. name)
+  return true
 end
 
 -- Remove all case variants of a name from the roster
