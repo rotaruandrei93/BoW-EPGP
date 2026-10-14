@@ -5,7 +5,8 @@
 --   Set Disenchanter -> adds Name to the DE roster and makes them the first choice
 -- With pfUI (advanced loot menus on) pfUI's own two entries are used and we just
 -- listen to the clicks; without pfUI the same two entries are added to the normal
--- Blizzard menu. Only shown to the master looter / raid leader, on group members.
+-- Blizzard menu. Only shown to (and usable by) the raid leader, raid assistants and the
+-- master looter, on group members.
 -- WoW 1.12 / Lua 5.0 compatible.
 
 local ACTION = {
@@ -15,8 +16,10 @@ local ACTION = {
   SEPGP_DE = "de",
 }
 
+-- our own entries AND pfUI's bank/DE entries (pfUI shows those to everyone)
 local function isOurs(value)
   return value == "SEPGP_BANKER" or value == "SEPGP_DE"
+      or value == "PF_BANKLOOTER" or value == "PF_DISENCHANTLOOTER"
 end
 
 -- ---- click handling (works for pfUI's entries and ours) ----
@@ -30,12 +33,14 @@ if origOnClick then
     local frame = getglobal(UIDROPDOWNMENU_INIT_MENU)
     local name = frame and frame.name
     if not name or name == "" then return end
+    if not sepgp:canManageLoot() then sepgp:denyLootManage() return end
     if kind == "bank" then
       sepgp:SetBanker(name)
     else
-      sepgp:deRosterAdd(name)
-      sepgp_de_primary = sepgp:normalizeName(name)
-      sepgp:defaultPrint(string.format("%s is now the first-choice disenchanter.", sepgp_de_primary))
+      if sepgp:deRosterAdd(name) then
+        sepgp_de_primary = sepgp:normalizeName(name)
+        sepgp:defaultPrint(string.format("%s is now the first-choice disenchanter.", sepgp_de_primary))
+      end
     end
   end
 end
@@ -50,8 +55,7 @@ if origHide then
     local unit = frame.unit
     for index, value in ipairs(UnitPopupMenus[frame.which]) do
       if isOurs(value) then
-        local method, mlID = GetLootMethod()
-        if not ((method == "master" and mlID == 0) or IsRaidLeader()) then
+        if not sepgp:canManageLoot() then
           UnitPopupShown[index] = 0
         end
         if unit and UnitIsPlayer(unit) and not (UnitInRaid(unit) or (UnitInParty(unit) and UnitExists("party1"))) then
