@@ -240,18 +240,7 @@ local admincmd, membercmd = {type = "group", handler = sepgp, args = {
       type = "execute",
       name = "Show Bid Window",
       desc = "Reopen the bid popup window if you closed it.",
-      func = function()
-        if sepgp.bid_item and (sepgp.bid_item.link or sepgp.bid_item.name) then
-          sepgp:ShowBidPopup(
-            sepgp.bid_item.linkFull,
-            sepgp.bid_item.name,
-            sepgp.bid_item.price or "?",
-            sepgp_bid_popup_ml or sepgp._playerName
-          )
-        else
-          sepgp:defaultPrint("No active bid to show.")
-        end
-      end,
+      func = function() sepgp:RequestBidPopup() end,
       order = 11,
     },
   }},
@@ -292,7 +281,14 @@ local admincmd, membercmd = {type = "group", handler = sepgp, args = {
         sepgp:defaultPrint(L["Restarted"])
       end,
       order = 4,
-    },    
+    },
+    bid = {
+      type = "execute",
+      name = "Show Bid Window",
+      desc = "Bring back the bid window for the current item.",
+      func = function() sepgp:RequestBidPopup() end,
+      order = 5,
+    },
   }}
   --[[{
     type = "execute",
@@ -521,6 +517,35 @@ function sepgp:buildMenu()
       max = 30,
       step = 1,
       hidden = function() return not admin() end,
+    }
+    options.args["ontime_now"] = {
+      type = "execute",
+      name = "On-Time EP: award now",
+      desc = "Opens the on-time EP popup for the matching RaidCalendar raid (same as /bowepgpontime now). Needs the RaidCalendar addon.",
+      order = 119.2,
+      hidden = function() return not admin() end,
+      func = function()
+        if sepgp_ontime and sepgp_ontime.Command then sepgp_ontime.Command("now") end
+      end,
+    }
+    options.args["ontime_auto"] = {
+      type = "toggle",
+      name = "On-Time EP: auto-award",
+      desc = "When on, the master looter pays on-time EP at the raid start time with no popup (default amount, only raiders in the raid's zones).",
+      order = 119.1,
+      get = function() return not not sepgp_ontime_auto end,
+      set = function(v) sepgp_ontime_auto = not sepgp_ontime_auto end,
+      hidden = function() return not admin() end,
+    }
+    options.args["ontime_status"] = {
+      type = "execute",
+      name = "On-Time EP: status",
+      desc = "Lists upcoming RaidCalendar raids and whether on-time EP is pending (same as /bowepgpontime status).",
+      order = 119.4,
+      hidden = function() return not admin() end,
+      func = function()
+        if sepgp_ontime and sepgp_ontime.Command then sepgp_ontime.Command("status") end
+      end,
     }
     options.args["reset"] = {
      type = "execute",
@@ -1128,8 +1153,17 @@ function sepgp:addonComms(prefix,message,channel,sender)
   -- so external-guild raiders get the bid window too)
   local bid_prefix = string.sub(message, 1, 4)
   if bid_prefix == "BID;" then
+    -- Any raider can ask the master looter to send the current bid window
+    -- again (dead / zoning / missed message). Only the client running the
+    -- active bid answers, and only to someone in the raid.
+    if string.sub(message, 1, 8) == "BID;REQ;" then
+      if (IsRaidLeader() or self:lootMaster()) and self:inRaid(sender) then
+        self:sendBidItem(sender)
+      end
+      return
+    end
     if self:isBidSyncSender(sender) then
-      self:handleBidSync(message, sender)
+      self:handleBidSync(message, sender, channel)
     end
     return
   end
@@ -1898,6 +1932,51 @@ lootCall.os = {
 lootCall.bs = { -- blacklist
   "^(roll)[%s%p%c]+.+",".+[%s%p%c]+(roll)$",".*[%s%p%c]+(roll)[%s%p%c]+.*"
 }
+-- Builds and sends the BID;ITEM message for the active round. target = nil
+-- broadcasts to the raid; target = a name whispers it to just that raider.
+function sepgp:sendBidItem(target)
+  local item = self.bid_item
+  if not (running_bid and not self._bidsLocked and item and item.link) then return end
+  local copies = tonumber(item.copies) or 1
+  local copiesTxt = (copies > 1) and string.format(" x%d", copies) or ""
+  local left = 0
+  if self._bidEndsAt then
+    left = math.floor(self._bidEndsAt - GetTime())
+    if left < 0 then left = 0 end
+  end
+  local msg = string.format("BID;ITEM;%s;%s;%s;%s;%s;%d;%d",
+    item.link, self._playerName, tostring(item.price or "?"),
+    (item.name or "") .. copiesTxt, item.linkFull or "", left, self._bidRoundId or 0)
+  if target then
+    self:addonMessage(msg, "WHISPER", target)
+  else
+    self:addonMessage(msg, "RAID")
+  end
+end
+
+-- While bids are open, re-send the item to the raid every few seconds so
+-- raiders who missed the first message (dead, zoning, chat throttle during
+-- fast listing) still get the bid window. Raiders who already have it ignore
+-- the repeat (same round id).
+function sepgp:BidResyncTick()
+  if not (running_bid and not self._bidsLocked and self.bid_item and self.bid_item.link and GetNumRaidMembers() > 0) then
+    self:StopBidResync()
+    return
+  end
+  self:sendBidItem(nil)
+end
+
+function sepgp:StartBidResync()
+  self:StopBidResync()
+  self:ScheduleRepeatingEvent("shootyepgpBidResync", self.BidResyncTick, 4, self)
+end
+
+function sepgp:StopBidResync()
+  if self:IsEventScheduled("shootyepgpBidResync") then
+    self:CancelScheduledEvent("shootyepgpBidResync")
+  end
+end
+
 -- Opens a bidding round for an item (used for new bids AND for Re-bid).
 function sepgp:startBidRound(itemString, itemLink, coloredName, gp_cost, copies, isRebid)
   copies = tonumber(copies) or 1
@@ -1923,8 +2002,11 @@ function sepgp:startBidRound(itemString, itemLink, coloredName, gp_cost, copies,
   local bidName = (sepgp.bid_item.name or "") .. copiesTxt
   local bidLink = sepgp.bid_item.linkFull or ""
   local bidDuration = math.floor(tonumber(sepgp_bidtimer or sepgp.VARS.bidtimer) or 0)
-  local item_msg = string.format("BID;ITEM;%s;%s;%s;%s;%s;%d", itemString, self._playerName, tostring(gp_txt), bidName, bidLink, bidDuration)
+  self._bidRoundId = math.floor(GetTime() * 10)
+  self._bidEndsAt = (bidDuration > 0) and (GetTime() + bidDuration) or nil
+  local item_msg = string.format("BID;ITEM;%s;%s;%s;%s;%s;%d;%d", itemString, self._playerName, tostring(gp_txt), bidName, bidLink, bidDuration, self._bidRoundId)
   self:addonMessage(item_msg, "RAID")
+  self:StartBidResync()
   self:ShowBidPopup(itemLink, bidName, gp_txt, self._playerName)
   sepgp_bids:bidCountdown()
 end
@@ -2194,6 +2276,7 @@ function sepgp:clearBids(reset)
   running_bid = false
   sepgp._bidsLocked = false
   sepgp._awaitingAward = nil
+  self:StopBidResync()
   if self.HideAwardWindow then self:HideAwardWindow() end
   sepgp_bids._counterText = ""
   self:UpdateBidPopupList()
@@ -2424,6 +2507,7 @@ function sepgp:clearBidsQuiet()
   running_bid = false
   sepgp._bidsLocked = false
   sepgp._awaitingAward = nil
+  self:StopBidResync()
   if self.HideAwardWindow then self:HideAwardWindow() end
   sepgp_bids._counterText = ""
   self:HideBidPopup()
@@ -2787,6 +2871,21 @@ function sepgp:ShowBidPopup(itemLink, itemName, gpCost, mlName)
   f:Show()
 end
 
+-- /bowepgp bid: bring the bid window back. The master looter just re-shows
+-- it; everyone else asks the master looter to send it again.
+function sepgp:RequestBidPopup()
+  if GetNumRaidMembers() == 0 then
+    self:defaultPrint("You must be in a raid to get the bid window.")
+    return
+  end
+  if (IsRaidLeader() or self:lootMaster()) and running_bid and self.bid_item and self.bid_item.link then
+    self:ShowBidPopup(self.bid_item.linkFull, self.bid_item.name, self.bid_item.price or "?", self._playerName)
+    return
+  end
+  self:addonMessage("BID;REQ;0", "RAID")
+  self:defaultPrint("Asked the master looter for the bid window (nothing appears if no bid is open).")
+end
+
 function sepgp:HideBidPopup()
   if self.StopBidTimer then self:StopBidTimer() end
   if sepgp_bid_popup and sepgp_bid_popup:IsShown() then
@@ -3033,7 +3132,7 @@ end
 --------------------------
 -- Feature 1: Bid Sync
 --------------------------
-function sepgp:handleBidSync(message, sender)
+function sepgp:handleBidSync(message, sender, channel)
   -- Parse BID messages: BID;TYPE;args...
   local parts = {}
   for part in string.gfind(message, "([^;]+)") do
@@ -3044,6 +3143,7 @@ function sepgp:handleBidSync(message, sender)
   local bid_type = parts[2] -- MS, OS, CLEAR, ITEM
 
   if bid_type == "CLEAR" then
+    sepgp._lastBidRound = nil
     -- Only clear on non-ML clients; ML manages bid_item locally
     if not sepgp:lootMaster() then
       sepgp.bid_item = {}
@@ -3074,6 +3174,14 @@ function sepgp:handleBidSync(message, sender)
     local gpCost = parts[5] or "?"
     local mlDisplayName = parts[6]  -- transmitted from ML
     local mlFullLink = parts[7]     -- transmitted from ML
+    -- Same round already on screen (periodic re-send from the ML): ignore it,
+    -- so it doesn't pop back up after the raider closed it or reset their bid.
+    -- A whispered copy (the raider asked for it) always shows.
+    local roundId = tonumber(parts[9])
+    if roundId and roundId == sepgp._lastBidRound and channel ~= "WHISPER" then
+      return
+    end
+    sepgp._lastBidRound = roundId
     if itemString and itemString ~= "" then
       sepgp.bid_item.link = itemString
       -- Store ML's transmitted price so bid window shows correct GP
