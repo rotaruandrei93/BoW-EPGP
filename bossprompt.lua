@@ -47,19 +47,28 @@ end
 local ENGAGED_WINDOW = 15   -- seconds a boss still counts as "fighting"
 BA.engaged = {}             -- [bossName] = GetTime() last seen alive + in combat
 
+-- PERF: the set of "partner" bosses is static data, and the unit strings are
+-- the same every second - build both once instead of 40+ new strings per tick.
+local watchSet, watchAny
+local raidTargetUnit = {}
+for i = 1, 40 do raidTargetUnit[i] = "raid" .. i .. "target" end
+
 local function pollEngaged()
-  local watch = {}
-  local any = false
-  for _, e in pairs(SEPGP_BOSS_AWARDS) do
-    if e.hard and e.hard.alive then
-      watch[e.hard.alive] = true
-      any = true
+  if watchSet == nil then
+    watchSet = {}
+    watchAny = false
+    for _, e in pairs(SEPGP_BOSS_AWARDS) do
+      if e.hard and e.hard.alive then
+        watchSet[e.hard.alive] = true
+        watchAny = true
+      end
     end
   end
-  if not any then return end
+  if not watchAny then return end
+  local watch = watchSet
   local now = GetTime()
   for i = 1, GetNumRaidMembers() do
-    local u = "raid" .. i .. "target"
+    local u = raidTargetUnit[i] or ("raid" .. i .. "target")
     if UnitExists(u) then
       local n = UnitName(u)
       if n and watch[n] and (not UnitIsDead(u)) and UnitAffectingCombat(u) then
