@@ -10,6 +10,8 @@ local _G = getfenv(0)
 -- near the bottom of the file; OnTooltipUpdate calls it so the look is
 -- hooked into the window before Tablet shows it for the first time
 local hookStandingsTip
+local standingsPoller = CreateFrame("Frame")   -- per-frame decorate watcher (see bottom of file)
+local pWakeUntil = 0
 
 -- a single blank line sits between the window title and the table; the
 -- table-look code (near the bottom of the file) resizes it to TITLE_GAP so
@@ -462,8 +464,9 @@ function sepgp_standings:BuildStandingsTable()
   sepgp:buildExternalMainsTable()
   for i = 1, (remote and 0 or GetNumGuildMembers(1)) do
     local name, _, _, _, class, _, note, officernote, _, _ = GetGuildRosterInfo(i)
-    local ep = (sepgp:get_ep_v3(name,officernote) or 0) 
-    local gp = (sepgp:get_gp_v3(name,officernote) or sepgp.VARS.basegp)
+    local ep, gp = sepgp:parseEPGP(officernote)   -- one pass instead of two patterns
+    ep = ep or 0
+    gp = gp or sepgp.VARS.basegp
     local main, main_class, main_rank = sepgp:parseAlt(name,officernote)
     local ext_name = sepgp.external_mains_reverse and sepgp.external_mains_reverse[name]
     if (main) then
@@ -617,6 +620,9 @@ function sepgp_standings:OnTooltipUpdate()
   -- make sure the table look is hooked into this window before Tablet
   -- shows it, so the lines are there on the very first paint
   if hookStandingsTip then hookStandingsTip() end
+  -- wake the decorate watcher (it sleeps while the window is closed)
+  pWakeUntil = GetTime() + 2
+  standingsPoller:Show()
 end
 
 -------------------------------------------------------------------------
@@ -1846,10 +1852,35 @@ end
 -- instead of visibly catching up in a lurch. This is safe to do without a
 -- throttle because decorateRow() already no-ops when nothing about a row
 -- has actually changed since the last call.
-local poller = CreateFrame("Frame")
-poller:SetScript("OnUpdate", function()
+-- PERF: decorate() builds strings/tables on every call. Running it on every
+-- frame (60+/s) for as long as the window is open produced a steady stream of
+-- garbage and periodic GC hitches on members who keep the standings open.
+-- Now it still runs EVERY frame while something is actually changing (open,
+-- Size slider, scroll, resize, new data), plus for 0.6s after, and otherwise
+-- only 4x/s as a safety net.
+-- It also goes to sleep (frame hidden = no OnUpdate calls at all) while the
+-- standings window is closed; OnTooltipUpdate() wakes it whenever the window
+-- is built.
+local pLast, pBusyUntil, pSlow = 0, 0, 0
+local pFsp, pScroll, pLines, pW, pH
+standingsPoller:SetScript("OnUpdate", function()
   local tip = hookStandingsTip()
-  if tip and tip.owner == "sepgp_standings" and tip:IsShown() then
+  if not (tip and tip.owner == "sepgp_standings" and tip:IsShown()) then
+    pFsp = nil
+    -- wait a moment before sleeping: right after OnTooltipUpdate the window
+    -- is not shown yet
+    if GetTime() > pWakeUntil then standingsPoller:Hide() end
+    return
+  end
+  local now = GetTime()
+  local fsp, sc, nl = tip.fontSizePercent, tip.scroll, tip.numLines
+  local w, h = tip:GetWidth(), tip:GetHeight()
+  if fsp ~= pFsp or sc ~= pScroll or nl ~= pLines or w ~= pW or h ~= pH then
+    pFsp, pScroll, pLines, pW, pH = fsp, sc, nl, w, h
+    pBusyUntil = now + 0.6
+  end
+  if now < pBusyUntil or (now - pSlow) >= 0.25 then
+    pSlow = now
     decorate(tip)
   end
 end)
