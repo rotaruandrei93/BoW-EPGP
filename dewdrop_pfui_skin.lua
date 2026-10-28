@@ -430,7 +430,26 @@ function scan()
 end
 
 local poller = CreateFrame("Frame")
+-- Everything below only exists to skin menus with pfUI. Without pfUI it did
+-- nothing visible but still walked every frame in the client, so skip it
+-- completely unless pfUI is really there (re-checked every 2s because pfUI
+-- loads after this addon).
+local pfuiOn, nextPfuiCheck = false, 0
+local firstSeen
 poller:SetScript("OnUpdate", function()
+  local t = GetTime()
+  if not firstSeen then firstSeen = t end
+  if t >= nextPfuiCheck then
+    nextPfuiCheck = t + 2
+    pfuiOn = sepgp_pfui.IsEnabled() and true or false
+    -- pfUI is an addon: if it is not loaded 30s after login it never will be
+    -- (a reload is needed to enable it), so stop polling altogether.
+    if (not pfuiOn) and (t - firstSeen) > 30 and IsAddOnLoaded and not IsAddOnLoaded("pfUI") then
+      poller:Hide()
+      return
+    end
+  end
+  if not pfuiOn then return end
   if not D then
     if AceLibrary and AceLibrary:HasInstance("Dewdrop-2.0") then
       D = AceLibrary("Dewdrop-2.0")
