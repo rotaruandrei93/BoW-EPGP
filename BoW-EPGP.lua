@@ -557,10 +557,17 @@ function sepgp:buildMenu()
     }
   end
   if (needInit) or (needRefresh) then
-    local members = sepgp:buildRosterTable()
-    self:debugPrint(string.format(L["Scanning %d members for EP/GP data. (%s)"],table.getn(members),(sepgp_raidonly and "Raid" or "Full")))
-    options.args["ep"].args = sepgp:buildClassMemberTable(members,"ep")
-    options.args["gp"].args = sepgp:buildClassMemberTable(members,"gp")
+    -- The per-member EP/GP submenus are admin-only, so regular members skip
+    -- building them (hundreds of menu entries on every right-click).
+    if (admin()) then
+      local members = sepgp:buildRosterTable()
+      self:debugPrint(string.format(L["Scanning %d members for EP/GP data. (%s)"],table.getn(members),(sepgp_raidonly and "Raid" or "Full")))
+      options.args["ep"].args = sepgp:buildClassMemberTable(members,"ep")
+      options.args["gp"].args = sepgp:buildClassMemberTable(members,"gp")
+    else
+      options.args["ep"].args = {}
+      options.args["gp"].args = {}
+    end
     if (needInit) then needInit = false end
     if (needRefresh) then needRefresh = false end
   end
@@ -588,7 +595,9 @@ function sepgp:OnEnable() -- PLAYER_LOGIN (2)
   --table.insert(sepgp_debug,{[date("%b/%d %H:%M:%S")]="OnEnable"})
   sepgp._playerLevel = UnitLevel("player")
   sepgp.extratip = (sepgp.extratip) or CreateFrame("GameTooltip","shootyepgp_tooltip",UIParent,"GameTooltipTemplate")
-  sepgp_pfui.Register(sepgp.extratip, function() sepgp_pfui.SkinTooltip(sepgp.extratip) end)
+  if sepgp_pfui and sepgp_pfui.Register then
+    sepgp_pfui.Register(sepgp.extratip, function() sepgp_pfui.SkinTooltip(sepgp.extratip) end)
+  end
   -- sepgp.name is the real addon folder name (AceAddon-2.0 sets it from
   -- the folder that was loaded), so this still resolves if the folder
   -- ever ends up with a different name than "BoW-EPGP".
@@ -624,20 +633,23 @@ function sepgp:OnEnable() -- PLAYER_LOGIN (2)
   end
 
   self:RegisterEvent("GUILD_ROSTER_UPDATE",function() 
-      if (arg1) then -- member join /leave
-        sepgp:SetRefresh(true)
+      -- PERF: the roster/notes changed on the client; cached lookups must be
+      -- re-validated. This is O(1) - the real work happens lazily.
+      sepgp:rosterChanged()
+      if (arg1) then -- member join /leave / note edit
+        sepgp:SetRefresh(true, true)
       end
     end)
   self:RegisterEvent("RAID_ROSTER_UPDATE",function()
-      sepgp:SetRefresh(true)
+      sepgp:SetRefresh(true, true)
       sepgp:testLootPrompt()
     end)
   self:RegisterEvent("PARTY_MEMBERS_CHANGED",function()
-      sepgp:SetRefresh(true)
+      sepgp:SetRefresh(true, true)
       sepgp:testLootPrompt()
     end)
   self:RegisterEvent("PLAYER_ENTERING_WORLD",function()
-      sepgp:SetRefresh(true)
+      sepgp:SetRefresh(true, true)
       sepgp:testLootPrompt()
     end)
   self:RegisterEvent("CHAT_MSG_RAID","captureLootCall")
@@ -745,7 +757,7 @@ function sepgp:TipHook()
       local is_master = (sepgp:lootMaster()) and true or nil
       local link_found, _, itemColor, itemString, itemName = string.find(itemLink, "^(|c%x+)|H(.+)|h(%[.+%])")
       if (link_found) then
-        local bind = self:itemBinding(itemString) or ""
+        local bind = is_master and (self:itemBinding(itemString) or "") or ""
         ml_tip = is_master and bind == sepgp.VARS.boe
         if (ml_tip) then
           local frame = GetMouseFocus()
@@ -804,7 +816,7 @@ function sepgp:delayedInit()
   --table.insert(sepgp_debug,{[date("%b/%d %H:%M:%S")]="delayedInit"})
   -- migrate EPGP storage if needed
   self:parseVersion(sepgp._versionString)
-  local major_ver = self._version.major
+  local major_ver = self._version.major or 0
   -- 2026-04-02: Added nil check for migration function to prevent Lua error
   -- when a migration path doesn't exist (e.g. v3tov5 skipping v4). Previously
   -- crashed with "attempt to call field '?' (a nil value)" on guild leaders.
@@ -851,7 +863,11 @@ function sepgp:AddDataToTooltip(tooltip,itemlink,itemstring,is_master)
   else 
     line_limit = 28 
   end
-  local ep,gp = (self:get_ep_v3(self._playerName) or 0), (self:get_gp_v3(self._playerName) or sepgp.VARS.basegp)
+  local nowt = GetTime()
+  if not self._tipEPGP or (nowt - self._tipEPGP.t) > 10 then
+    self._tipEPGP = { t = nowt, ep = (self:get_ep_v3(self._playerName) or 0), gp = (self:get_gp_v3(self._playerName) or sepgp.VARS.basegp) }
+  end
+  local ep,gp = self._tipEPGP.ep, self._tipEPGP.gp
   local off_price = math.floor(price*sepgp_discount)
   local pr,new_pr,new_pr_off = ep/gp, ep/(gp+price), ep/(gp+off_price)
   local pr_delta = new_pr - pr
@@ -888,6 +904,7 @@ function sepgp:AddDataToTooltip(tooltip,itemlink,itemstring,is_master)
 end
 
 function sepgp:GuildRosterSetOfficerNote(index,note,fromAddon)
+  self:rosterChanged() -- cached note-derived data (external mains) is stale now
   if (fromAddon) then
     self.hooks["GuildRosterSetOfficerNote"](index,note)
   else
@@ -1291,10 +1308,36 @@ function sepgp:shareSettings(force)
   end
 end
 
+-- Explicit refresh (button clicks, awards, ...): immediate, exactly as before.
+-- Tablet:Refresh itself does nothing while the standings window is closed.
 function sepgp:refreshPRTablets()
-  --if not T:IsAttached("sepgp_standings") then
+  self._lastPRRefresh = GetTime()
   sepgp_standings:Refresh()
-  --end
+end
+
+-- Event-driven refresh (guild roster / raid roster / party changes).
+-- Officer-note edits (EP awards) flood every member with guild roster
+-- updates; each one used to rebuild the whole standings table. Now:
+--  * nothing at all happens while the standings window is closed (it is built
+--    from scratch when it is opened anyway), and
+--  * while it is open, bursts are coalesced to at most one rebuild per 1.5s
+--    (the first one runs immediately, the last one of a burst is never lost).
+local PR_REFRESH_GAP = 1.5
+function sepgp:refreshPRTabletsSoon()
+  local reg = T.registry and T.registry.sepgp_standings
+  local tt = reg and reg.tooltip
+  if not (tt and tt:IsShown()) then return end
+  local now = GetTime()
+  local since = now - (self._lastPRRefresh or 0)
+  if since >= PR_REFRESH_GAP then
+    self._lastPRRefresh = now
+    sepgp_standings:Refresh()
+  elseif not self:IsEventScheduled("shootyepgpPRRefresh") then
+    self:ScheduleEvent("shootyepgpPRRefresh", function()
+      sepgp._lastPRRefresh = GetTime()
+      sepgp_standings:Refresh()
+    end, PR_REFRESH_GAP - since)
+  end
 end
 
 ---------------------
@@ -1360,12 +1403,11 @@ function sepgp:update_ep_v2(getname,ep)
 end
 
 function sepgp:update_ep_v3(getname,ep)
-  for i = 1, GetNumGuildMembers(1) do
-    local name, _, _, _, class, _, note, officernote, _, _ = GetGuildRosterInfo(i)
-    if (name==getname) then 
-      self:update_epgp_v3(ep,nil,i,name,officernote)
-    end
-  end  
+  local idx, g = self:guildIndex(getname)
+  if idx and g == getname then
+    local _,_,_,_,_,_,_,officernote = GetGuildRosterInfo(idx)
+    self:update_epgp_v3(ep,nil,idx,g,officernote)
+  end
 end
 
 function sepgp:update_gp_v2(getname,gp)
@@ -1379,12 +1421,11 @@ function sepgp:update_gp_v2(getname,gp)
 end
 
 function sepgp:update_gp_v3(getname,gp)
-  for i = 1, GetNumGuildMembers(1) do
-    local name, _, _, _, class, _, note, officernote, _, _ = GetGuildRosterInfo(i)
-    if (name==getname) then 
-      self:update_epgp_v3(nil,gp,i,name,officernote) 
-    end
-  end  
+  local idx, g = self:guildIndex(getname)
+  if idx and g == getname then
+    local _,_,_,_,_,_,_,officernote = GetGuildRosterInfo(idx)
+    self:update_epgp_v3(nil,gp,idx,g,officernote)
+  end
 end
 
 function sepgp:get_ep_v2(getname,note) -- gets ep by name or note
@@ -1399,19 +1440,85 @@ function sepgp:get_ep_v2(getname,note) -- gets ep by name or note
   return(0)
 end
 
+---------------------------------------------------------------------------
+-- Guild roster lookup cache (PERF)
+--
+-- Looking a member up by name used to walk the whole guild roster and (for the
+-- EP/GP getters) run a pattern match on every officer note on the way. That
+-- ran for every addon message, every tooltip, every award and, worst of all,
+-- once per alt while the standings were built (guild size x alts x string.lower
+-- garbage). Now: one name -> index map, rebuilt lazily, and every hit is
+-- re-validated against the live roster so it can never return a wrong member.
+---------------------------------------------------------------------------
+local rosterIdx, rosterIdxN, rosterIdxDirty, rosterIdxT = nil, 0, true, 0
+sepgp._noteVer = 0
+
+-- Called when the client's copy of the roster/notes may have changed.
+function sepgp:rosterChanged()
+  rosterIdxDirty = true
+  self._noteVer = (self._noteVer or 0) + 1
+  self._tipEPGP = nil -- tooltip's own EP/GP may have changed
+end
+
+local function rebuildRosterIdx()
+  local n = GetNumGuildMembers(1)
+  local map = {}
+  for i = 1, n do
+    local nm = GetGuildRosterInfo(i)
+    if nm then map[string.lower(nm)] = i end
+  end
+  rosterIdx, rosterIdxN, rosterIdxDirty, rosterIdxT = map, n, false, GetTime()
+end
+
+-- Returns roster index, exact roster name  (or nil when not in the guild).
+-- Case-insensitive, like verifyGuildMember always was.
+function sepgp:guildIndex(name)
+  if type(name) ~= "string" or name == "" then return nil end
+  if (not rosterIdx) or rosterIdxN ~= GetNumGuildMembers(1) then rebuildRosterIdx() end
+  local key = string.lower(name)
+  local idx = rosterIdx[key]
+  if idx then
+    local g = GetGuildRosterInfo(idx)
+    if g and string.lower(g) == key then return idx, g end
+    -- roster was re-sorted / changed under us
+    rebuildRosterIdx()
+    idx = rosterIdx[key]
+    if idx then
+      g = GetGuildRosterInfo(idx)
+      if g then return idx, g end
+    end
+    return nil
+  end
+  if rosterIdxDirty or (GetTime() - rosterIdxT) > 5 then
+    -- something changed since the map was built (or it is simply old - safety
+    -- net, at most one rebuild per 5s): a miss may be a new member
+    rebuildRosterIdx()
+    idx = rosterIdx[key]
+    if idx then
+      local g = GetGuildRosterInfo(idx)
+      if g then return idx, g end
+    end
+  end
+  return nil
+end
+
+-- {EP:GP} out of an officer note. Same result as the two old patterns
+-- (".*{(%d+):%d+}.*" / ".*{%d+:(%d+)}.*"), but notes without any "{" - most of
+-- the guild - are rejected with one plain-text search instead of a pattern.
+function sepgp:parseEPGP(officernote)
+  if (not officernote) or (not string.find(officernote,"{",1,true)) then return nil, nil end
+  local _,_,ep,gp = string.find(officernote,".*{(%d+):(%d+)}.*")
+  return tonumber(ep), tonumber(gp)
+end
+
 function sepgp:get_ep_v3(getname,officernote) -- gets ep by name or note
   if (officernote) then
-    local _,_,ep = string.find(officernote,".*{(%d+):%d+}.*")
-    return tonumber(ep)
+    return (self:parseEPGP(officernote))
   end
-  for i = 1, GetNumGuildMembers(1) do
-    local name, _, _, _, class, _, note, officernote, _, _ = GetGuildRosterInfo(i)
-    if officernote then
-      local _,_,ep = string.find(officernote,".*{(%d+):%d+}.*")
-      if (name==getname) then return tonumber(ep) end
-    elseif (name==getname) then
-      return nil
-    end
+  local idx, g = self:guildIndex(getname)
+  if idx and g == getname then
+    local _,_,_,_,_,_,_,on = GetGuildRosterInfo(idx)
+    if on then return (self:parseEPGP(on)) end
   end
   return
 end
@@ -1430,16 +1537,15 @@ end
 
 function sepgp:get_gp_v3(getname,officernote) -- gets gp by name or officernote
   if (officernote) then
-    local _,_,gp = string.find(officernote,".*{%d+:(%d+)}.*")
-    return tonumber(gp)
+    local _,gp = self:parseEPGP(officernote)
+    return gp
   end
-  for i = 1, GetNumGuildMembers(1) do
-    local name, _, _, _, class, _, note, officernote, _, _ = GetGuildRosterInfo(i)
-    if officernote then
-      local _,_,gp = string.find(officernote,".*{%d+:(%d+)}.*")
-      if (name==getname) then return tonumber(gp) end
-    elseif (name==getname) then
-      return nil
+  local idx, g = self:guildIndex(getname)
+  if idx and g == getname then
+    local _,_,_,_,_,_,_,on = GetGuildRosterInfo(idx)
+    if on then
+      local _,gp = self:parseEPGP(on)
+      return gp
     end
   end
   return
@@ -1702,10 +1808,14 @@ function sepgp:OnClick()
   end
 end
 
-function sepgp:SetRefresh(flag)
+function sepgp:SetRefresh(flag, soon)
   needRefresh = flag
   if (flag) then
-    self:refreshPRTablets()
+    if (soon) then
+      self:refreshPRTabletsSoon()
+    else
+      self:refreshPRTablets()
+    end
   end
 end
 
@@ -1803,6 +1913,8 @@ end
 ---------------
 function sepgp:parseAlt(name,officernote)
   if (officernote) then
+    -- a main tag needs "{" + two letters; almost no note has one
+    if not string.find(officernote,"{%a%a") then return nil end
     local _,_,_,main,_ = string.find(officernote or "","(.*){([%a][%a]%a*)}(.*)")
     if type(main)=="string" and (string.len(main) < 13) then
       main = self:camelCase(main)
@@ -1816,11 +1928,10 @@ function sepgp:parseAlt(name,officernote)
       return nil
     end
   else
-    for i=1,GetNumGuildMembers(1) do
-      local g_name, _, _, _, g_class, _, g_note, g_officernote, _, _ = GetGuildRosterInfo(i)
-      if (name == g_name) then
-        return self:parseAlt(g_name, g_officernote)
-      end
+    local idx, g_name = self:guildIndex(name)
+    if idx and g_name == name then
+      local _,_,_,_,_,_,_,g_officernote = GetGuildRosterInfo(idx)
+      return self:parseAlt(g_name, g_officernote or "")
     end
   end
   return nil
@@ -1855,16 +1966,26 @@ function sepgp:buildExternalMainsTable()
     sepgp.external_mains_reverse = nil
     return
   end
+  -- PERF: this runs for every standings build / bid / award. The result only
+  -- changes when the roster or a note changes (_noteVer), so reuse it.
+  if sepgp.external_mains and sepgp.external_mains_reverse
+     and sepgp._extVer == sepgp._noteVer and sepgp._extN == numGuildMembers then
+    return
+  end
   sepgp.external_mains = {}
   sepgp.external_mains_reverse = {}
   for i = 1, numGuildMembers do
     local name, _, _, _, class, _, _, officernote, _, _ = GetGuildRosterInfo(i)
-    local ext = self:parseExternalTag(officernote)
-    if ext and name then
-      sepgp.external_mains[string.lower(ext)] = {alt = name, class = class, officernote = officernote, ext_name = ext}
-      sepgp.external_mains_reverse[name] = ext
+    -- tag looks like {X:Name}: skip the pattern for notes that cannot hold one
+    if name and officernote and string.find(officernote,"{X:",1,true) then
+      local ext = self:parseExternalTag(officernote)
+      if ext then
+        sepgp.external_mains[string.lower(ext)] = {alt = name, class = class, officernote = officernote, ext_name = ext}
+        sepgp.external_mains_reverse[name] = ext
+      end
     end
   end
+  sepgp._extVer, sepgp._extN = sepgp._noteVer, numGuildMembers
 end
 
 -- Given a real character name (which may not be in this guild), returns
@@ -2012,6 +2133,8 @@ function sepgp:startBidRound(itemString, itemLink, coloredName, gp_cost, copies,
 end
 
 function sepgp:captureLootCall(text, sender)
+  -- PERF: every path below needs an item link; nearly all raid chat has none.
+  if (not text) or (not string.find(text, "|Hitem:", 1, true)) then return end
   -- Skip our own [EPGP] announcements to prevent cascade: our RAID_WARNING
   -- messages contain |Hitem: links which would re-trigger this handler.
   if string.find(text, "^%[EPGP%]") then return end
@@ -2693,13 +2816,15 @@ function sepgp:CreateBidPopup()
 
   -- Re-skin with pfUI's border/buttons when pfUI is detected as enabled,
   -- instead of the default Blizzard tooltip look set up above.
-  sepgp_pfui.Register(f, function()
-    sepgp_pfui.SkinFrame(f)
-    sepgp_pfui.SkinCloseButton(closeBtn, f, -2, -2)
-    for _, btn in ipairs(bidButtons) do
-      sepgp_pfui.SkinButton(btn)
-    end
-  end)
+  if sepgp_pfui and sepgp_pfui.Register then
+    sepgp_pfui.Register(f, function()
+      sepgp_pfui.SkinFrame(f)
+      sepgp_pfui.SkinCloseButton(closeBtn, f, -2, -2)
+      for _, btn in ipairs(bidButtons) do
+        sepgp_pfui.SkinButton(btn)
+      end
+    end)
+  end
 
   sepgp_bid_popup = f
   return f
@@ -3424,9 +3549,13 @@ function sepgp:writeDebugLog(msg)
   if not SEPGP_DEBUG_LOG then SEPGP_DEBUG_LOG = {} end
   local timestamp = date("%Y-%m-%d %H:%M:%S")
   table.insert(SEPGP_DEBUG_LOG, timestamp .. " | " .. msg)
-  -- Cap at 2000 entries to prevent SavedVariables bloat
-  while table.getn(SEPGP_DEBUG_LOG) > 2000 do
-    table.remove(SEPGP_DEBUG_LOG, 1)
+  -- Cap at 2000 entries to prevent SavedVariables bloat. Trimmed in one
+  -- batch (every 200 writes) instead of shifting the whole table on every write.
+  local n = table.getn(SEPGP_DEBUG_LOG)
+  if n > 2200 then
+    local drop = n - 2000
+    for i = 1, 2000 do SEPGP_DEBUG_LOG[i] = SEPGP_DEBUG_LOG[i + drop] end
+    for i = n, 2001, -1 do SEPGP_DEBUG_LOG[i] = nil end
   end
 end
 
@@ -4710,10 +4839,11 @@ function sepgp:advanceLootQueue()
 end
 
 function sepgp:verifyGuildMember(name,silent)
-  for i=1,GetNumGuildMembers(1) do
-    local g_name, g_rank, g_rankIndex, g_level, g_class, g_zone, g_note, g_officernote, g_online = GetGuildRosterInfo(i)
-    if (string.lower(name) == string.lower(g_name)) and (tonumber(g_level) >= sepgp.VARS.minlevel) then 
-    -- == MAX_PLAYER_LEVEL]]
+  if not name then return end
+  local idx = self:guildIndex(name)
+  if idx then
+    local g_name, g_rank, g_rankIndex, g_level, g_class, g_zone, g_note, g_officernote, g_online = GetGuildRosterInfo(idx)
+    if (tonumber(g_level) or 0) >= sepgp.VARS.minlevel then
       return g_name, g_class, g_rank, g_officernote
     end
   end
