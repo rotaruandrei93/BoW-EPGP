@@ -45,10 +45,11 @@ local serverJoined = false
 
 local function after(delay, fn)
   table.insert(tasks, {at = GetTime() + delay, fn = fn})
+  frame:Show()   -- the frame sleeps (no OnUpdate calls) while there is nothing queued
 end
 
 frame:SetScript("OnUpdate", function()
-  if table.getn(tasks) == 0 then return end
+  if table.getn(tasks) == 0 then frame:Hide() return end
   local now = GetTime()
   local i = 1
   while i <= table.getn(tasks) do
@@ -128,8 +129,21 @@ local function send(msg)
   if id then SendChatMessage(MARK .. msg, "CHANNEL", nil, id) end
 end
 
+-- PERF: this is asked about EVERY channel message the client receives (Trade,
+-- General, ...), so remember the answer per channel name instead of lower-casing
+-- strings each time. Channel names are few, the cache stays tiny.
+local CHANNEL_LOWER = string.lower(CHANNEL)
+local ourChannelCache, ourChannelCacheN = {}, 0
 local function isOurChannel(name)
-  return name and string.find(string.lower(name), string.lower(CHANNEL), 1, true) ~= nil
+  if not name then return name end
+  local c = ourChannelCache[name]
+  if c == nil then
+    c = string.find(string.lower(name), CHANNEL_LOWER, 1, true) ~= nil
+    if ourChannelCacheN >= 100 then ourChannelCache, ourChannelCacheN = {}, 0 end
+    ourChannelCache[name] = c
+    ourChannelCacheN = ourChannelCacheN + 1
+  end
+  return c
 end
 
 -- Hide everything we send/receive and the channel join/leave notices from all chat frames.
