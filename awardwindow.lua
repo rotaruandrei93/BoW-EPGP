@@ -131,6 +131,7 @@ end
 -- Countdown shown centered under the title of the bid popup (ML and raiders).
 local timerFS, timerFrame
 local timerEnd, timerActive = 0, false
+local timerLastSec = nil   -- only rebuild the text when the displayed second changes
 
 local function ensureTimer()
   if timerFS then return end
@@ -144,10 +145,13 @@ local function ensureTimer()
     local rem = timerEnd - GetTime()
     if rem < 0 then rem = 0 end
     local sec = math.ceil(rem)
-    local color = "|cff50cd32"
-    if sec <= 5 then color = "|cffff3333" elseif sec <= 10 then color = "|cffffcc00" end
-    local m = math.floor(sec / 60)
-    timerFS:SetText(string.format("%s%d:%02d|r", color, m, sec - m * 60))
+    if sec ~= timerLastSec then
+      timerLastSec = sec
+      local color = "|cff50cd32"
+      if sec <= 5 then color = "|cffff3333" elseif sec <= 10 then color = "|cffffcc00" end
+      local m = math.floor(sec / 60)
+      timerFS:SetText(string.format("%s%d:%02d|r", color, m, sec - m * 60))
+    end
     if rem <= 0 then timerActive = false end
   end)
 end
@@ -157,12 +161,14 @@ function sepgp:StartBidTimer(seconds)
   if not seconds or seconds <= 0 then return end
   ensureTimer()
   timerEnd = GetTime() + seconds
+  timerLastSec = nil
   timerActive = true
 end
 
 -- text (optional): shown instead of the time, e.g. "Closed"
 function sepgp:StopBidTimer(text)
   timerActive = false
+  timerLastSec = nil
   if timerFS then
     if text then timerFS:SetText("|cff999999" .. text .. "|r") else timerFS:SetText("") end
   end
